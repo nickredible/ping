@@ -1,4 +1,4 @@
-# Find My Live Bridge for Android
+# Ping for Android
 
 Kotlin, Jetpack Compose and Material 3 Expressive. Package `uk.maynotfunction.ping`,
 min API 31, target API 37. The design follows [Tomato](https://github.com/nsh07/Tomato): a floating

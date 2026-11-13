@@ -198,7 +198,7 @@ fun SettingsTab(
     when (dialog) {
         EditDialog.PairingCode -> TextFieldDialog(
             title = "Pairing code",
-            message = "Paste the fmb1:… code from the relay iPhone's Find My Live Bridge settings.",
+            message = "Paste the fmb1:… code from Ping Relay's settings on the iPhone.",
             initial = "",
             placeholder = "fmb1:https://…",
             // Password-type keyboard: no autocorrect, suggestions or learning (the code holds the key).

@@ -1,4 +1,4 @@
-# Find My Live Bridge — iOS tweak
+# Ping Relay — iOS tweak
 
 A single-dylib jailbreak tweak for **iOS 15.4.1** (Dopamine rootless + ElleKit) that bridges Apple's
 Find My to an Android phone. It injects the Android location into Find My, captures friends'
@@ -58,7 +58,7 @@ as My Location**.
 
 ## Settings pane
 
-Under **Settings → Find My Live Bridge** (and a floating button inside the Find My app):
+Under **Settings → Ping Relay** (and a floating button inside the Find My app):
 
 - **Enable Location Bridge** — master on/off.
 - **Pairing code** — copy it to Android, paste one in, or generate a new key. It contains the

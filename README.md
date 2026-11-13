@@ -1,4 +1,4 @@
-# Find My Live Bridge
+# Ping
 
 Put an **Android phone onto Apple's Find My**, live, by relaying its location through a spare
 jailbroken iPhone.

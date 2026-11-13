@@ -1,4 +1,4 @@
-// Verification tests & E2EE relay companion for FindMyLiveBridge.
+// Verification tests & E2EE relay companion for Ping / Ping Relay.
 //
 // Uses ios-tweak/FMBShared.h directly, so it tests the exact code the tweak runs:
 // 1. AES-256-GCM (CommonCrypto) against NIST SP 800-38D test case 16, plus tamper rejection

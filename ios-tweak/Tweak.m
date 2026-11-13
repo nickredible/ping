@@ -1,4 +1,4 @@
-// FindMyLiveBridge - iOS 15.4.1 (Dopamine Rootless / ElleKit) Tweak + Native Settings Pane
+// Ping Relay - iOS 15.4.1 (Dopamine Rootless / ElleKit) Tweak + Native Settings Pane
 // Two-way live location bridge between an Android device and iOS Find My (fmfd / FindMy.app).
 // Strictly enforces live hardware GPS fixes with TTL expiration and AES-256-GCM E2EE.
 
@@ -304,7 +304,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Find My Live Bridge";
+    self.title = @"Ping Relay";
     if (self.presentingViewController != nil) {
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
             initWithBarButtonSystemItem:UIBarButtonSystemItemDone
@@ -365,7 +365,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     if (section == 0) {
         return @"When enabled, fmfd and Find My report your Android phone's verified hardware GPS coordinates. Fixes expire automatically if Android stops updating.";
     } else if (section == 1) {
-        return @"All location packets are end-to-end encrypted with AES-256-GCM before leaving your devices. Copy this code to the Find My Live Bridge app on your Android device.";
+        return @"All location packets are end-to-end encrypted with AES-256-GCM before leaving your devices. Copy this code to the Ping app on your Android device.";
     } else if (section == 2) {
         return @"The access token is only needed for a self-hosted ntfy server with authentication; changing the server or token creates a new pairing code. \"Also Replace Device Location\" makes Find My iPhone and the offline finding network report the Android location too. Turn it off to leave them on this iPhone's own GPS (Share My Location still uses Android).";
     }
@@ -524,7 +524,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
             NSString *code = cfg[@"pairingCode"] ?: @"";
             [UIPasteboard generalPasteboard].string = code;
             [self showToastAlert:@"Copied Pairing Code"
-                         message:@"The fmb1 E2EE pairing code has been copied to your clipboard. Paste it into the Find My Live Bridge app on your Android device."];
+                         message:@"The fmb1 E2EE pairing code has been copied to your clipboard. Paste it into the Ping app on your Android device."];
         } else if (indexPath.row == 2) {
             NSString *clip = [UIPasteboard generalPasteboard].string;
             NSDictionary *parsed = parsePairingCode(clip);
@@ -1295,7 +1295,7 @@ static void installHook(Class cls, SEL sel, IMP newImp, IMP *origOut) {
         UIButton *pill = [UIButton buttonWithType:UIButtonTypeSystem];
         pill.frame = CGRectMake(win.bounds.size.width - 132, 54, 118, 34);
         pill.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin;
-        [pill setTitle:@"Bridge Settings" forState:UIControlStateNormal];
+        [pill setTitle:@"Ping Relay" forState:UIControlStateNormal];
         [pill setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         pill.titleLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightSemibold];
         pill.backgroundColor = [[UIColor systemBlueColor] colorWithAlphaComponent:0.90];
@@ -1761,7 +1761,7 @@ static void startLocalHttpServer(void) {
                     NSString *headers = nil;
                     NSData *bodyData = readHttpRequest(clientFd, &headers);
 
-                    NSString *respBody = @"{\"ok\":true,\"service\":\"FindMyLiveBridge\",\"version\":\"1.4.8\"}";
+                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"1.4.8\"}";
                     NSString *contentType = @"application/json";
                     int statusCode = 200;
                     NSString *body = bodyData ? [[NSString alloc] initWithData:bodyData encoding:NSUTF8StringEncoding] : nil;

@@ -137,7 +137,7 @@ def main():
         b'        <key>isController</key>\n'
         b'        <true/>\n'
         b'        <key>label</key>\n'
-        b'        <string>Find My Live Bridge</string>\n'
+        b'        <string>Ping Relay</string>\n'
         b'    </dict>\n'
         b'</dict>\n'
         b'</plist>\n'

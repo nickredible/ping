@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FindMyLiveBridge"
+rootProject.name = "Ping"
 include(":app")
