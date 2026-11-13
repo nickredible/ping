@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HTTPS everywhere, except the optional direct LAN/VPN link to the relay iPhone (plain HTTP on
+     private addresses; its payloads are AES-GCM encrypted). Android can't scope cleartext to IP
+     ranges, so cleartext stays allowed globally, as in the old app. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

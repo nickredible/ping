@@ -1,0 +1,13 @@
+# Build output (APK, debug keystore, dex, deb, dylib)
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/local.properties
+android/keystore/
+ios-tweak/build/
+
+# Compiled test binary
+tools/test_e2ee_protocol
+
+.DS_Store

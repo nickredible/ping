@@ -1,0 +1,245 @@
+package uk.maynotfunction.ping.data
+
+import android.content.Context
+import android.location.Location
+import android.util.Log
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import uk.maynotfunction.ping.core.Cadence
+import uk.maynotfunction.ping.core.FriendLocation
+import uk.maynotfunction.ping.core.LogLine
+import uk.maynotfunction.ping.core.MyFix
+import uk.maynotfunction.ping.core.PairingCode
+import uk.maynotfunction.ping.core.PairingConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "bridge_settings")
+
+enum class MapStyle { Auto, Light, Dark }
+
+/** Auto = Google Maps when Play services and an API key are available, otherwise OpenStreetMap. */
+enum class MapProvider(val label: String) { Auto("Auto"), Google("Google"), OpenStreetMap("OSM") }
+
+data class Settings(
+    val loaded: Boolean = false,
+    val pairingCode: String = "",
+    val sharingEnabled: Boolean = true,
+    val contactsMatching: Boolean = true,
+    val previewContacts: Boolean = false,
+    val cadence: Cadence = Cadence.Balanced,
+    val customTileUrl: String = "",
+    val mapStyle: MapStyle = MapStyle.Auto,
+    val mapProvider: MapProvider = MapProvider.Auto,
+    val cachedFriendsJson: String = "",
+) {
+    val pairing: PairingConfig? get() = PairingCode.parse(pairingCode)
+}
+
+data class RelayStatus(
+    val lastUploadMs: Long = 0L,
+    val uploadCount: Int = 0,
+    val rejectedCount: Int = 0,
+    val lastTransport: String? = null,
+    val lastError: String? = null,
+    val lastRejectReason: String? = null,
+    val relayActive: Boolean = false,
+    val meDeviceActive: Boolean = false,
+    val lastDownlinkMs: Long = 0L,
+)
+
+/** Single source of truth for settings, this phone's fix, friends, relay status and the debug log. */
+class BridgeRepository(context: Context, private val scope: CoroutineScope) {
+    private val store = context.applicationContext.dataStore
+
+    private object Keys {
+        val pairing = stringPreferencesKey("pairing_code")
+        val sharing = booleanPreferencesKey("sharing_enabled")
+        val contacts = booleanPreferencesKey("contacts_sync_enabled")
+        val preview = booleanPreferencesKey("preview_contacts_when_empty")
+        val cadence = intPreferencesKey("cadence_mode")
+        val tiles = stringPreferencesKey("custom_tile_url")
+        val mapStyle = intPreferencesKey("map_style")
+        val mapProvider = intPreferencesKey("map_provider")
+        val friends = stringPreferencesKey("cached_friends_json")
+    }
+
+    val settings: StateFlow<Settings> = store.data
+        .map { p ->
+            Settings(
+                loaded = true,
+                pairingCode = p[Keys.pairing].orEmpty(),
+                sharingEnabled = p[Keys.sharing] ?: true,
+                contactsMatching = p[Keys.contacts] ?: true,
+                previewContacts = p[Keys.preview] ?: false,
+                cadence = Cadence.fromOrdinal(p[Keys.cadence] ?: Cadence.Balanced.ordinal),
+                customTileUrl = p[Keys.tiles].orEmpty(),
+                mapStyle = MapStyle.entries.getOrElse(p[Keys.mapStyle] ?: 0) { MapStyle.Auto },
+                mapProvider = MapProvider.entries.getOrElse(p[Keys.mapProvider] ?: 0) { MapProvider.Auto },
+                cachedFriendsJson = p[Keys.friends].orEmpty(),
+            )
+        }
+        .stateIn(scope, SharingStarted.Eagerly, Settings())
+
+    val friends: StateFlow<List<FriendLocation>> = settings
+        .map { it.cachedFriendsJson }
+        .distinctUntilChanged()
+        .map { FriendLocation.listFromJson(it) }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    private val _myFix = MutableStateFlow<MyFix?>(null)
+    val myFix: StateFlow<MyFix?> = _myFix.asStateFlow()
+
+    private val _status = MutableStateFlow(RelayStatus())
+    val status: StateFlow<RelayStatus> = _status.asStateFlow()
+
+    private val _syncing = MutableStateFlow(false)
+    val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
+
+    /** True while the app's UI is on screen; the service uses precise, fast updates then. */
+    private val _uiVisible = MutableStateFlow(false)
+    val uiVisible: StateFlow<Boolean> = _uiVisible.asStateFlow()
+    fun setUiVisible(visible: Boolean) { _uiVisible.value = visible }
+
+    /** Human-readable description of the service's current location mode (shown in the Me tab). */
+    private val _locationMode = MutableStateFlow("Off")
+    val locationMode: StateFlow<String> = _locationMode.asStateFlow()
+    fun setLocationMode(mode: String) { _locationMode.value = mode }
+
+    private val _logs = MutableStateFlow<List<LogLine>>(emptyList())
+    val logs: StateFlow<List<LogLine>> = _logs.asStateFlow()
+
+    init {
+        scope.launch {
+            store.edit { p ->
+                if (PairingCode.parse(p[Keys.pairing]) == null) {
+                    p[Keys.pairing] = PairingCode.generate(null, null, null)
+                }
+            }
+            log("Bridge ready (AES-256-GCM)")
+        }
+    }
+
+    suspend fun awaitSettings(): Settings = settings.first { it.loaded }
+
+    // ---- Log ---------------------------------------------------------------------------------
+
+    fun log(message: String) {
+        // Never log coordinates or the pairing code; logcat is readable over adb.
+        Log.i("Ping", message)
+        _logs.update { (listOf(LogLine(System.currentTimeMillis(), message)) + it).take(80) }
+    }
+
+    fun clearLog() = _logs.update { emptyList() }
+
+    // ---- Location & relay status ---------------------------------------------------------------
+
+    fun recordFix(location: Location) {
+        _myFix.value = MyFix(
+            lat = location.latitude,
+            lon = location.longitude,
+            accuracyM = location.accuracy,
+            provider = location.provider ?: "gps",
+            timeMs = if (location.time > 0) location.time else System.currentTimeMillis(),
+        )
+    }
+
+    fun setSyncing(value: Boolean) { _syncing.value = value }
+
+    fun recordUploadSuccess(transport: String) {
+        _status.update {
+            it.copy(lastUploadMs = System.currentTimeMillis(), uploadCount = it.uploadCount + 1,
+                lastTransport = transport, lastError = null)
+        }
+        log("Uploaded live fix via $transport")
+    }
+
+    fun recordUploadFailure(error: String) {
+        _status.update { it.copy(lastError = error) }
+        log("Sync error: $error")
+    }
+
+    fun recordRejected(reason: String) {
+        _status.update { it.copy(rejectedCount = it.rejectedCount + 1, lastRejectReason = reason) }
+        log("Rejected fix: $reason")
+    }
+
+    suspend fun applyDownlink(payload: JSONObject) {
+        _status.update {
+            it.copy(relayActive = payload.optBoolean("relayActive", true),
+                meDeviceActive = payload.optBoolean("meDeviceActive", true),
+                lastDownlinkMs = System.currentTimeMillis())
+        }
+        val arr = payload.optJSONArray("friends") ?: return
+        val list = (0 until arr.length()).mapNotNull { FriendLocation.fromJson(arr.optJSONObject(it)) }
+        store.edit { it[Keys.friends] = FriendLocation.listToJson(list) }
+        log("Synced ${list.size} friend(s) from relay iPhone")
+    }
+
+    // ---- Settings ------------------------------------------------------------------------------
+
+    suspend fun setSharingEnabled(enabled: Boolean) {
+        store.edit { it[Keys.sharing] = enabled }
+        log(if (enabled) "Location sharing on" else "Location sharing paused")
+    }
+
+    suspend fun setContactsMatching(enabled: Boolean) = store.edit { it[Keys.contacts] = enabled }
+    suspend fun setPreviewContacts(enabled: Boolean) = store.edit { it[Keys.preview] = enabled }
+    suspend fun setCadence(cadence: Cadence) {
+        store.edit { it[Keys.cadence] = cadence.ordinal }
+        log("Update frequency: ${cadence.label}")
+    }
+    suspend fun setCustomTileUrl(value: String) = store.edit { it[Keys.tiles] = value.trim() }
+    suspend fun setMapStyle(style: MapStyle) = store.edit { it[Keys.mapStyle] = style.ordinal }
+    suspend fun setMapProvider(provider: MapProvider) = store.edit { it[Keys.mapProvider] = provider.ordinal }
+    suspend fun clearCachedFriends() = store.edit { it.remove(Keys.friends) }
+
+    /** Saves [code] if it parses; returns false otherwise. */
+    suspend fun setPairingCode(code: String): Boolean {
+        val cfg = PairingCode.parse(code) ?: return false
+        store.edit { it[Keys.pairing] = cfg.raw }
+        log("Pairing code updated (channel ${cfg.channelId.take(8)}…)")
+        return true
+    }
+
+    suspend fun rotateKey() {
+        val cur = awaitSettings().pairing
+        setPairingCode(PairingCode.generate(cur?.relayUrl, cur?.lanEndpoint, cur?.relayToken))
+    }
+
+    suspend fun setRelayUrl(url: String): Boolean {
+        val cleaned = url.trim().trimEnd('/')
+        if (!cleaned.startsWith("http")) return false
+        val cur = awaitSettings().pairing ?: return false
+        return setPairingCode(cur.withRelayUrl(cleaned))
+    }
+
+    suspend fun setLanEndpoint(lan: String): Boolean {
+        val v = lan.trim()
+        if (v.isNotEmpty() && !PairingCode.isSafeLan(v)) return false
+        val cur = awaitSettings().pairing ?: return false
+        return setPairingCode(cur.withLanEndpoint(v))
+    }
+
+    suspend fun setRelayToken(token: String): Boolean {
+        val v = token.trim()
+        if (v.isNotEmpty() && !PairingCode.isSafeToken(v)) return false
+        val cur = awaitSettings().pairing ?: return false
+        return setPairingCode(cur.withRelayToken(v))
+    }
+}
