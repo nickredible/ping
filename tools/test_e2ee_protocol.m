@@ -203,9 +203,9 @@ int main(int argc, const char *argv[]) {
         NSDictionary *p1 = fmbParsePairingCode(plain);
         CHECK([p1[@"relayUrl"] isEqualToString:@"https://ntfy.example.com"] && [p1[@"channelId"] isEqualToString:channelId] &&
               [p1[@"keyBase64"] isEqualToString:keyB64] && !p1[@"lanEndpoint"] && !p1[@"relayToken"], "plain code parses");
-        NSString *full = fmbBuildPairingCode(@"https://ntfy.example.com", channelId, keyB64, @"10.0.1.50:8765", @"tk_abc123XYZ");
+        NSString *full = fmbBuildPairingCode(@"https://ntfy.example.com", channelId, keyB64, @"192.168.1.50:8765", @"tk_abc123XYZ");
         NSDictionary *p2 = fmbParsePairingCode(full);
-        CHECK([p2[@"lanEndpoint"] isEqualToString:@"10.0.1.50:8765"] && [p2[@"relayToken"] isEqualToString:@"tk_abc123XYZ"],
+        CHECK([p2[@"lanEndpoint"] isEqualToString:@"192.168.1.50:8765"] && [p2[@"relayToken"] isEqualToString:@"tk_abc123XYZ"],
               "lan + token parse");
         NSString *tokenOnly = fmbBuildPairingCode(@"https://ntfy.example.com", channelId, keyB64, nil, @"tk_abc");
         CHECK([fmbParsePairingCode(tokenOnly)[@"relayToken"] isEqualToString:@"tk_abc"] && !fmbParsePairingCode(tokenOnly)[@"lanEndpoint"],

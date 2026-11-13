@@ -55,11 +55,11 @@ The pairing code is `fmb1:<relayUrl>:<channelId>:<base64Key>[?lan=<host:port>][&
 ### 1. Android App ([`android/`](android/))
 Kotlin + Jetpack Compose with Material 3 Expressive (min API 31, target API 37), package `uk.maynotfunction.ping`. See [`android/README.md`](android/README.md) for the architecture, build and install steps. It replaced the original hand-built Java app (`com.findmy.livebridge`, removed).
 
-### 2. iOS 15.4.1 Dopamine Rootless ElleKit Tweak ([`ios-tweak/`](file:///Users/nick/Projects/find-my/ios-tweak))
-- [`ios-tweak/Tweak.m`](file:///Users/nick/Projects/find-my/ios-tweak/Tweak.m) — Single-dylib tweak + native iOS Settings pane (`FMBSettingsViewController`).
-- [`ios-tweak/FMBShared.h`](file:///Users/nick/Projects/find-my/ios-tweak/FMBShared.h) — Protocol code shared with the test tool: CommonCrypto AES-GCM, envelopes, pairing codes, fix validation, replay protection.
-- [`ios-tweak/build/com.findmy.livebridge_1.4.0_iphoneos-arm64.deb`](file:///Users/nick/Projects/find-my/ios-tweak/build/com.findmy.livebridge_1.4.0_iphoneos-arm64.deb) (built via [`ios-tweak/build_deb.py`](file:///Users/nick/Projects/find-my/ios-tweak/build_deb.py)).
+### 2. iOS 15.4.1 Dopamine Rootless ElleKit Tweak ([`ios-tweak/`](ios-tweak))
+- [`ios-tweak/Tweak.m`](ios-tweak/Tweak.m) — Single-dylib tweak + native iOS Settings pane (`FMBSettingsViewController`).
+- [`ios-tweak/FMBShared.h`](ios-tweak/FMBShared.h) — Protocol code shared with the test tool: CommonCrypto AES-GCM, envelopes, pairing codes, fix validation, replay protection.
+- The rootless `.deb` is produced in `ios-tweak/build/` (gitignored) by [`ios-tweak/build_deb.py`](ios-tweak/build_deb.py), reading the version from [`ios-tweak/control`](ios-tweak/control).
 
-### 3. Verification & Relay Test Suite ([`tools/`](file:///Users/nick/Projects/find-my/tools))
-- [`tools/test_e2ee_protocol.m`](file:///Users/nick/Projects/find-my/tools/test_e2ee_protocol.m) — Tests the tweak's own `FMBShared.h`: NIST SP 800-38D vector, tamper rejection, envelope direction binding, fix validation, pairing-code parsing and replay protection. `--simulate-relay <code>` acts as a stand-in relay device.
+### 3. Verification & Relay Test Suite ([`tools/`](tools))
+- [`tools/test_e2ee_protocol.m`](tools/test_e2ee_protocol.m) — Tests the tweak's own `FMBShared.h`: NIST SP 800-38D vector, tamper rejection, envelope direction binding, fix validation, pairing-code parsing and replay protection. `--simulate-relay <code>` acts as a stand-in relay device.
   Build and run: `cd tools && clang -fobjc-arc -I ../ios-tweak -framework Foundation -framework Security test_e2ee_protocol.m -o test_e2ee_protocol && ./test_e2ee_protocol`

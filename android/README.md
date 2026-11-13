@@ -71,10 +71,13 @@ any `{z}/{x}/{y}` template. The map is read-only; there is no way to pick or ent
 
 ## Build and install
 
-Needs JDK 21 and the Android SDK (platform `android-37.2`, build tools 37). `local.properties`
-points at the SDK. Release builds are minified with R8 and signed with `keystore/debug.keystore`
-(gitignored). Keep using it: the Google Maps API key is restricted to this package name and that
-key's SHA-1 (`CF:A8:F9:EF:83:4D:F6:9F:87:B6:98:CF:8C:AD:B5:43:8A:91:1D:36`).
+Needs JDK 21 and the Android SDK. Point `local.properties` at the SDK (`sdk.dir=...`). Release
+builds are minified with R8 and signed with a keystore at `keystore/debug.keystore` (gitignored;
+create one with `keytool`, or adjust `signingConfigs` in `app/build.gradle.kts`).
+
+For Google Maps, create a Google Cloud project, enable "Maps SDK for Android", and restrict the
+key to this package name and your keystore's SHA-1 (`keytool -list -v -keystore keystore/debug.keystore`).
+Put the key in `local.properties` as `MAPS_API_KEY=...`. Without it the app uses OpenStreetMap.
 
 ```bash
 JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew :app:assembleRelease

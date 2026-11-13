@@ -231,7 +231,7 @@ fun SettingsTab(
             title = "Direct LAN/VPN address",
             message = "Optional host:port of the relay iPhone for direct sync on your network or VPN (port 8765). The relay is still used for pushes from the iPhone.",
             initial = pairing?.lanEndpoint.orEmpty(),
-            placeholder = "10.0.1.50:8765",
+            placeholder = "192.168.1.50:8765",
             keyboardType = KeyboardType.Uri,
             onDismiss = { dialog = null },
             onConfirm = { v -> vm.setLanEndpoint(v) { ok -> if (!ok) showMessage("Use host:port") }; dialog = null },
