@@ -17,9 +17,9 @@ What the safeguards cover and, more importantly, what they don't.
   before anything is encrypted.
 - **Freshness checks on the iPhone.** [`FMBShared.h`](../ios-tweak/FMBShared.h) rejects any incoming
   fix with `isMock == true`, a capture time more than 120 s from now, accuracy worse than 2000 m, or
-  invalid coordinates. Stored fixes expire after the TTL (20 min by default, clamped to 5–60 min) if
-  Android stops reporting. After that every hook falls back to the iPhone's real location, so a stale
-  coordinate is never served as fresh.
+  invalid coordinates. If Android stops reporting, the last accepted fix is kept and served until a
+  new one arrives (Settings shows *Holding last fix*). It's served with the current time, so friends
+  see that position as current rather than the relay iPhone's own location.
 - **End-to-end encryption.** All relay and LAN traffic is AES-256-GCM with a random 96-bit IV, a
   128-bit tag and direction-bound AAD ([`PROTOCOL.md`](PROTOCOL.md#envelope)). The relay only sees
   ciphertext. The AES-GCM code is checked against NIST SP 800-38D vectors and tamper cases by

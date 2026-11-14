@@ -80,8 +80,8 @@ What gets uploaded depends on the **Update frequency** setting:
 | Balanced (default) | 40 m | 5 min |
 | Saver | 100 m | 10 min |
 
-Movement uploads are at least 10 s apart. Heartbeats keep the iPhone's copy from expiring (20 min TTL
-by default); while stationary each one takes a single balanced-power fix. **Sync now**, opening the
+Movement uploads are at least 10 s apart. Heartbeats keep the iPhone's copy fresh (it shows
+*Holding last fix* after 20 min without one); while stationary each one takes a single balanced-power fix. **Sync now**, opening the
 app, and the iPhone's `locate_request` each take one precise fix (or reuse a recent one within
 50 m). A background upload asks the iPhone to refresh friends at most every 15 minutes. The
 notification only redraws when its text changes.

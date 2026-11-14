@@ -120,7 +120,7 @@ Both downlink types share one shape:
 | `friends` | array | See below |
 | `relayActive` | bool | The bridge's **Enable** switch |
 | `meDeviceActive` | bool | Whether Apple says this iPhone is the My Location device (`serverContext.sendMyLocation`) |
-| `liveFixActive` | bool | Whether an unexpired Android fix is stored |
+| `liveFixActive` | bool | Whether an Android fix is stored and being injected (it never expires) |
 | `lastInjectedFixTimeMs` | int (ms) | Capture time of that fix, or 0 |
 | `relayTimeMs` | int (ms) | Informational |
 | `fmfdHooked` | bool | Always `true`; informational |
@@ -165,7 +165,7 @@ A minimal HTTP/1.1 server in SpringBoard, listening on all IPv4 interfaces. Requ
 |---|---|---|
 | `POST /v1/sync` | Anyone, but it only acts on a valid, fresh uplink envelope | `200` with an encrypted `friends_state` envelope, or `401` |
 | `GET /v1/pairing` | **Loopback only** | `200 text/plain`: the current pairing code |
-| `POST /v1/pairing` | **Loopback only** | `200 {"ok":true,"paired":true}` or `400`. Replaces the config with the posted code. This resets **Enabled**, **TTL** (20 min) and **Also Replace Device Location** to their defaults. |
+| `POST /v1/pairing` | **Loopback only** | `200 {"ok":true,"paired":true}` or `400`. Replaces the config with the posted code. This resets **Enabled** and **Also Replace Device Location** to their defaults. |
 | anything else | Anyone | `200 {"ok":true,"service":"PingRelay","version":"…"}` health check |
 
 A pairing request from a non-loopback address gets the health response, not the code. When a LAN

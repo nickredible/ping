@@ -77,7 +77,7 @@ folder and Darwin notifications (`notify_post`):
    connect timeout. Otherwise, or if that fails, it POSTs to `<relay>/fmb-<channel>-up`.
 6. **Receive.** The SpringBoard hub holds one streaming subscription to the uplink topic. It
    decrypts each message, checks `seq` and freshness ([`SECURITY.md`](SECURITY.md)), and writes the fix
-   to `state.json` with an expiry of now + TTL (20 min by default). Then it posts `location_updated`.
+   to `state.json`. Then it posts `location_updated`.
 7. **Inject.** In the Find My processes the tweak hooks `CLLocationManager`:
    - `location` returns the stored fix;
    - `setDelegate:` swizzles the delegate's `locationManager:didUpdateLocations:` so it receives the
@@ -87,8 +87,10 @@ folder and Darwin notifications (`notify_post`):
    - `CLLocationSourceInformation` `isSimulatedBySoftware` / `isProducedByAccessory` return `NO`
      while a fix is being injected.
 
-   Find My then publishes the Android position as the iPhone's location. Once the fix expires,
-   every hook falls back to the real CoreLocation result.
+   Find My then publishes the Android position as the iPhone's location. A stored fix never expires:
+   if Android goes quiet, the last one keeps being served, so Find My doesn't jump to the relay
+   iPhone's own position. The hooks only fall back to the real CoreLocation result when the bridge
+   is off or no fix is stored (none received yet, or **Clear Cached Android Fix**).
 
 ## Friends' locations: Apple → Android
 
@@ -151,9 +153,9 @@ Everything is under `/var/jb/var/mobile/Library/Preferences/` (rootless), or the
 
 | File (`com.findmy.livebridge.…`) | Contents |
 |---|---|
-| `config.json` | `enabled`, `ttlMinutes`, `hookDeviceLocation`, `relayUrl`, `relayToken`, `channelId`, `keyBase64`, `lanEndpoint`, `pairingCode`. Created with a fresh key on first run. |
+| `config.json` | `enabled`, `hookDeviceLocation`, `relayUrl`, `relayToken`, `channelId`, `keyBase64`, `lanEndpoint`, `pairingCode`. Created with a fresh key on first run. |
 | `pairing.txt` | The current pairing code on its own |
-| `state.json` | The current Android fix plus `receivedAtMs` / `expiresAtMs` |
+| `state.json` | The latest Android fix plus `receivedAtMs` |
 | `friends.json` | Merged friends list and `meDeviceActive` |
 | `friendmeta.json` | `findMyId → {handle, name}` |
 | `debug` / `debug.d/` | Opt-in debug flag and its captures ([`ios-tweak/README.md`](../ios-tweak/README.md#debugging)) |

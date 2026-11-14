@@ -136,8 +136,8 @@ launchctl load -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plis
 ## Good to know
 
 - Sharing runs as a foreground service. After a reboot, open Ping once to start it again.
-- When you're still, Ping goes near-idle and sends heartbeats. If it stops reporting for 20 minutes
-  (the iPhone's **Live Expiration TTL**), Find My falls back to the iPhone's own location.
+- When you're still, Ping goes near-idle and sends heartbeats. If it stops reporting (no signal, phone
+  off), Find My keeps showing its last position until it reports again, instead of jumping to the iPhone.
 - Anyone holding the pairing code can set your Find My location. If it leaks, generate a new key and
   re-pair. See [`docs/SECURITY.md`](docs/SECURITY.md).
 

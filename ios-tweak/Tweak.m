@@ -1,6 +1,7 @@
 // Ping Relay - iOS 15.4.1 (Dopamine Rootless / ElleKit) Tweak + Native Settings Pane
 // Two-way live location bridge between an Android device and iOS Find My (fmfd / FindMy.app).
-// Strictly enforces live hardware GPS fixes with TTL expiration and AES-256-GCM E2EE.
+// Strictly enforces live hardware GPS fixes and AES-256-GCM E2EE. If Android goes quiet, the last
+// fix is held until it reports again, so Find My never jumps back to this iPhone's own location.
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -83,11 +84,10 @@ static NSDictionary *parsePairingCode(NSString *code) {
     if (!parsed) return nil;
     NSMutableDictionary *cfg = [parsed mutableCopy];
     cfg[@"enabled"] = @YES;
-    cfg[@"ttlMinutes"] = @20;
     return cfg;
 }
 
-static NSDictionary *generateFreshBridgeConfig(NSString *customRelayUrl, NSString *relayToken, BOOL enabled, int ttlMinutes, BOOL hookDeviceLocation) {
+static NSDictionary *generateFreshBridgeConfig(NSString *customRelayUrl, NSString *relayToken, BOOL enabled, BOOL hookDeviceLocation) {
     uint8_t chanBytes[12];
     uint8_t keyBytes[32];
     if (SecRandomCopyBytes(kSecRandomDefault, sizeof(chanBytes), chanBytes) != errSecSuccess ||
@@ -109,7 +109,6 @@ static NSDictionary *generateFreshBridgeConfig(NSString *customRelayUrl, NSStrin
 
     NSMutableDictionary *cfg = [@{
         @"enabled": @(enabled),
-        @"ttlMinutes": @(ttlMinutes > 0 ? ttlMinutes : 20),
         @"hookDeviceLocation": @(hookDeviceLocation),
         @"relayUrl": relayUrl,
         @"channelId": channelId,
@@ -141,7 +140,7 @@ static NSDictionary *loadOrCreateBridgeConfig(void) {
             return dict;
         }
     }
-    return generateFreshBridgeConfig(@"https://ntfy.sh", nil, YES, 20, YES);
+    return generateFreshBridgeConfig(@"https://ntfy.sh", nil, YES, YES);
 }
 
 static void saveBridgeConfigDictionary(NSDictionary *cfg) {
@@ -167,14 +166,6 @@ static BOOL isBridgeEnabled(void) {
     return YES;
 }
 
-static int64_t configuredTtlMs(void) {
-    NSDictionary *cfg = loadOrCreateBridgeConfig();
-    int mins = (cfg && cfg[@"ttlMinutes"]) ? [cfg[@"ttlMinutes"] intValue] : 20;
-    if (mins < 5) mins = 5;
-    if (mins > 60) mins = 60;
-    return (int64_t)mins * 60LL * 1000LL;
-}
-
 // Whether findmydeviced/searchpartyd (Find My iPhone device location and the offline
 // finding network) also get the Android location. fmfd and FindMy.app always do.
 static BOOL isDeviceLocationHookEnabled(void) {
@@ -187,7 +178,6 @@ static void regenerateBridgeConfig(NSDictionary *cur, NSString *relayUrl, NSStri
     generateFreshBridgeConfig(relayUrl ?: (cur[@"relayUrl"] ?: @"https://ntfy.sh"),
                               relayToken,
                               cur[@"enabled"] ? [cur[@"enabled"] boolValue] : YES,
-                              cur[@"ttlMinutes"] ? [cur[@"ttlMinutes"] intValue] : 20,
                               cur[@"hookDeviceLocation"] ? [cur[@"hookDeviceLocation"] boolValue] : YES);
     notify_post(kNotifyConfigChanged);
 }
@@ -201,18 +191,20 @@ static void addRelayAuth(NSMutableURLRequest *req, NSDictionary *cfg) {
 
 #pragma mark - Live Location Validation & Storage
 
-static NSDictionary *loadValidLiveState(void) {
+// Android counts as quiet once no fix or heartbeat has arrived for this long (the slowest
+// cadence heartbeats every 10 min). Only the status display uses it: the last fix keeps being
+// injected while Android is quiet, so Find My doesn't flip to this iPhone's own location.
+static const int64_t kAndroidQuietAfterMs = 20LL * 60LL * 1000LL;
+
+// The stored Android fix, however old. nil when the bridge is off or no fix has been stored
+// (or it was cleared); only then do the hooks fall back to the real CoreLocation result.
+static NSDictionary *loadLiveState(void) {
     if (!isBridgeEnabled()) return nil;
     NSString *path = resolvePath(kStatePathRootless, kStatePathFallback);
     NSData *data = [NSData dataWithContentsOfFile:path];
     if (!data) return nil;
     NSDictionary *state = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     if (![state isKindOfClass:[NSDictionary class]]) return nil;
-
-    int64_t expiresAtMs = [state[@"expiresAtMs"] longLongValue];
-    if (currentEpochMs() > expiresAtMs) {
-        return nil;
-    }
     return state;
 }
 
@@ -261,7 +253,6 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
         @"course": payload[@"course"] ?: @(-1.0),
         @"fixTimeMs": @(fixTimeMs),
         @"receivedAtMs": @(nowMs),
-        @"expiresAtMs": @(nowMs + configuredTtlMs()),
         @"provider": payload[@"provider"] ?: @"gps"
     };
 
@@ -345,7 +336,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     switch (section) {
         case 0: return 4; // Enable switch, Live Fix status, Coordinates, Friends count
         case 1: return 4; // Pairing Code display, Copy, Paste from Clipboard, Generate New Key
-        case 2: return 4; // Relay Server URL, Relay Access Token, Live Fix Expiration TTL, Device location toggle
+        case 2: return 3; // Relay Server URL, Relay Access Token, Device location toggle
         case 3: return 2; // Force Sync Friends Now, Clear Cached Live Fix
         default: return 0;
     }
@@ -355,7 +346,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     switch (section) {
         case 0: return @"Live Location Bridge";
         case 1: return @"E2EE Internet Relay Pairing (fmb1)";
-        case 2: return @"Relay & TTL Settings";
+        case 2: return @"Relay Settings";
         case 3: return @"Daemon & Diagnostics";
         default: return nil;
     }
@@ -363,7 +354,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == 0) {
-        return @"When enabled, fmfd and Find My report your Android phone's verified hardware GPS coordinates. Fixes expire automatically if Android stops updating.";
+        return @"When enabled, fmfd and Find My report your Android phone's verified hardware GPS coordinates. If Android stops updating, its last fix is kept until it reports again.";
     } else if (section == 1) {
         return @"All location packets are end-to-end encrypted with AES-256-GCM before leaving your devices. Copy this code to the Ping app on your Android device.";
     } else if (section == 2) {
@@ -388,7 +379,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
 
     NSDictionary *cfg = loadOrCreateBridgeConfig();
-    NSDictionary *liveState = loadValidLiveState();
+    NSDictionary *liveState = loadLiveState();
 
     if (indexPath.section == 0) {
         if (indexPath.row == 0) {
@@ -406,9 +397,17 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
                 cell.detailTextLabel.text = @"Paused";
                 cell.detailTextLabel.textColor = [UIColor systemOrangeColor];
             } else if (liveState != nil) {
-                int64_t remSec = ([liveState[@"expiresAtMs"] longLongValue] - currentEpochMs()) / 1000;
-                cell.detailTextLabel.text = [NSString stringWithFormat:@"Active (TTL %lldm %llds)", remSec / 60, remSec % 60];
-                cell.detailTextLabel.textColor = [UIColor systemGreenColor];
+                int64_t quietMs = currentEpochMs() - [liveState[@"receivedAtMs"] longLongValue];
+                if (quietMs < kAndroidQuietAfterMs) {
+                    cell.detailTextLabel.text = @"Active";
+                    cell.detailTextLabel.textColor = [UIColor systemGreenColor];
+                } else {
+                    int64_t mins = quietMs / 60000;
+                    NSString *age = mins >= 60 ? [NSString stringWithFormat:@"%lldh %lldm", mins / 60, mins % 60]
+                                               : [NSString stringWithFormat:@"%lldm", mins];
+                    cell.detailTextLabel.text = [NSString stringWithFormat:@"Holding last fix (%@ ago)", age];
+                    cell.detailTextLabel.textColor = [UIColor systemOrangeColor];
+                }
             } else {
                 cell.detailTextLabel.text = @"Waiting for Android GPS";
                 cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
@@ -464,10 +463,6 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
                                         : @"None";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else if (indexPath.row == 2) {
-            cell.textLabel.text = @"Live Expiration TTL";
-            int ttl = cfg[@"ttlMinutes"] ? [cfg[@"ttlMinutes"] intValue] : 20;
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%d minutes (Tap to cycle)", ttl];
-        } else if (indexPath.row == 3) {
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
             cell.textLabel.text = @"Also Replace Device Location";
             cell.detailTextLabel.text = nil;
@@ -482,7 +477,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
             cell.textLabel.textColor = [UIColor systemBlueColor];
             cell.detailTextLabel.text = nil;
         } else if (indexPath.row == 1) {
-            cell.textLabel.text = @"Expire Cached Android Fix Immediately";
+            cell.textLabel.text = @"Clear Cached Android Fix";
             cell.textLabel.textColor = [UIColor systemRedColor];
             cell.detailTextLabel.text = nil;
         }
@@ -531,7 +526,6 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
             if (parsed) {
                 NSMutableDictionary *merged = [parsed mutableCopy];
                 merged[@"enabled"] = cfg[@"enabled"] ?: @YES;
-                merged[@"ttlMinutes"] = cfg[@"ttlMinutes"] ?: @20;
                 merged[@"hookDeviceLocation"] = cfg[@"hookDeviceLocation"] ?: @YES;
                 saveBridgeConfigDictionary(merged);
                 [self.tableView reloadData];
@@ -593,12 +587,6 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
                 [self.tableView reloadData];
             }]];
             [self presentViewController:ac animated:YES completion:nil];
-        } else if (indexPath.row == 2) {
-            int cur = cfg[@"ttlMinutes"] ? [cfg[@"ttlMinutes"] intValue] : 20;
-            int next = (cur == 10) ? 20 : ((cur == 20) ? 30 : 10);
-            cfg[@"ttlMinutes"] = @(next);
-            saveBridgeConfigDictionary(cfg);
-            [self.tableView reloadData];
         }
     } else if (indexPath.section == 3) {
         if (indexPath.row == 0) {
@@ -628,7 +616,7 @@ static volatile BOOL gDeviceHookEnabled = YES;
 
 static NSDictionary *injectedLiveState(void) {
     if (gIsDeviceDaemon && !gDeviceHookEnabled) return nil;
-    return loadValidLiveState();
+    return loadLiveState();
 }
 
 static void pushLiveLocationToActiveManagers(void) {
@@ -1421,7 +1409,7 @@ static int64_t gLastAcceptedUpSeq = 0;
 static int64_t gLastSentDownSeq = 0;
 
 static NSDictionary *buildDownlinkPayload(NSString *msgType) {
-    NSDictionary *liveState = loadValidLiveState();
+    NSDictionary *liveState = loadLiveState();
     NSString *friendsPath = resolvePath(kFriendsPathRootless, kFriendsPathFallback);
     NSData *friendsData = [NSData dataWithContentsOfFile:friendsPath];
     NSDictionary *friendsFile = friendsData ? [NSJSONSerialization JSONObjectWithData:friendsData options:0 error:nil] : nil;
