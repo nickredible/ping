@@ -80,6 +80,7 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
         val mapProvider = intPreferencesKey("map_provider")
         val friends = stringPreferencesKey("cached_friends_json")
         val onboarded = booleanPreferencesKey("onboarding_done")
+        val mapStyleReset = booleanPreferencesKey("map_style_reset_2_5_2")
     }
 
     val settings: StateFlow<Settings> = store.data
@@ -139,6 +140,11 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
                 // Decide once whether setup is needed. Without this, friends arriving during
                 // setup (the connection check fetches them) would end it early.
                 if (p[Keys.onboarded] == null) p[Keys.onboarded] = !p[Keys.friends].isNullOrEmpty()
+                // Before 2.5.2 a button on the map pinned Light/Dark for good; go back to Auto once.
+                if (p[Keys.mapStyleReset] == null) {
+                    p[Keys.mapStyle] = MapStyle.Auto.ordinal
+                    p[Keys.mapStyleReset] = true
+                }
             }
             log("Bridge ready (AES-256-GCM)")
         }

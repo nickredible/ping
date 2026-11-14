@@ -282,10 +282,8 @@ fun BridgeScreen(vm: MainViewModel) {
             }
             MapOverlay(
                 state = state,
-                darkMap = darkMap,
                 showOsmAttribution = !googleMaps,
                 onStatusClick = { tab = Tab.Me },
-                onToggleStyle = { vm.setMapStyle(if (darkMap) MapStyle.Light else MapStyle.Dark) },
                 onMyLocation = {
                     val fix = state.myFix
                     if (fix != null) camera.animateTo(scope, fix.lat, fix.lon, max(camera.zoom, 15.0), motion.defaultSpatialSpec())
@@ -378,10 +376,8 @@ private fun TabToolbar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifie
 @Composable
 private fun MapOverlay(
     state: UiState,
-    darkMap: Boolean,
     showOsmAttribution: Boolean,
     onStatusClick: () -> Unit,
-    onToggleStyle: () -> Unit,
     onMyLocation: () -> Unit,
 ) {
     Row(
@@ -409,11 +405,8 @@ private fun MapOverlay(
             )
         }
         Spacer(Modifier.weight(1f))
+        // Map style (light/dark/follow the system) is in Settings.
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalIconButton(onClick = onToggleStyle, shapes = IconButtonDefaults.shapes(),
-                modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.ic_layers), contentDescription = if (darkMap) "Light map" else "Dark map")
-            }
             FilledTonalIconButton(onClick = onMyLocation, shapes = IconButtonDefaults.shapes(),
                 modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_my_location), contentDescription = "My location")
