@@ -1,92 +1,160 @@
 # Ping for Android
 
-Kotlin, Jetpack Compose and Material 3 Expressive. Package `uk.maynotfunction.ping`,
-min API 31, target API 37. The design follows [Tomato](https://github.com/nsh07/Tomato): a floating
+Kotlin, Jetpack Compose and Material 3 Expressive. Package `uk.maynotfunction.ping`, min API 31
+(Android 12), target API 37. The design follows [Tomato](https://github.com/nsh07/Tomato): a floating
 toolbar of expressive toggle buttons, segmented list items, connected button groups and the
 expressive motion scheme.
+
+For how the app fits into the whole bridge, see [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
 ## Layout
 
 ```
 app/src/main/java/uk/maynotfunction/ping/
-├── BridgeApplication.kt     App-wide singletons (repository, relay client, contacts)
+├── BridgeApplication.kt     App-wide singletons (repository, relay client, contacts); no DI framework
 ├── core/                    Pure protocol code, wire-compatible with ios-tweak/FMBShared.h
-│   ├── PairingCode.kt       fmb1:<relay>:<channel>:<key>[?lan=…][&token=…] parse/build/generate
+│   ├── PairingCode.kt       fmb1:<relay>:<channel>:<key>[?lan=…][&token=…] parse / build / generate
 │   ├── Envelope.kt          AES-256-GCM envelope (javax.crypto) + SeqGuard replay protection
 │   ├── LocationValidator.kt Rejects mock, stale (>120 s) and inaccurate (>1500 m) fixes
 │   └── Models.kt            FriendLocation, MyFix, Cadence, LogLine
 ├── data/
-│   ├── BridgeRepository.kt  DataStore settings,
-│   │                        StateFlows for this phone's fix, relay status, friends and the log
-│   ├── RelayClient.kt       HTTPS relay (ntfy) and direct LAN/VPN transport, downlink polling
-│   └── ContactsRepository.kt  Contacts provider lookups (PhoneLookup / Email lookup), photos
-├── service/LocationService.kt  Foreground location service: fused provider via LocationManager,
-│                               uploads on movement/heartbeat, polls the downlink every 5 s
+│   ├── BridgeRepository.kt  DataStore settings; StateFlows for this phone's fix, relay status,
+│   │                        friends and the in-memory log
+│   ├── RelayClient.kt       Uplink over the ntfy relay or direct LAN/VPN; streaming downlink
+│   │                        subscription with backoff
+│   └── ContactsRepository.kt  Contacts lookups (PhoneLookup / e-mail) for friends' names and photos
+├── service/LocationService.kt  Foreground location service: adaptive location requests, uploads on
+│                               movement / heartbeat / request, owns the downlink stream
 └── ui/
     ├── MainActivity.kt, MainViewModel.kt, BridgeScreen.kt  Scaffold, tabs, toolbar, permissions
-    ├── map/                 Compose-canvas slippy map: TileLoader (memory + disk cache),
-    │                        MapCamera (pan/zoom/fling/animated moves), LiveMap (tiles + pins)
-    ├── friends/ settings/ me/  The three tabs
+    ├── friends/ me/ settings/  The three tabs
+    ├── map/                 LiveMap: Compose-canvas slippy map (TileLoader with memory + disk cache,
+    │                        MapCamera pan/zoom/fling); GoogleLiveMap (Maps Compose); MapAvailability
     ├── components/          Avatar, list items, dialogs, formatting
-    └── theme/               MaterialExpressiveTheme with dynamic colour; system typography
+    └── theme/               MaterialExpressiveTheme with dynamic colour; typography
 ```
 
-**Platform first:** location comes from `LocationManager` with the platform fused provider (no
-Play Services), HTTP from `HttpURLConnection`, crypto from `javax.crypto`, settings from
-DataStore, contacts from `ContactsContract`. The only dependencies are AndroidX/Compose and
-kotlinx-coroutines.
+**Platform first.** Location comes from `LocationManager` with the platform fused provider (no Play
+Services), HTTP from `HttpURLConnection`, crypto from `javax.crypto`, settings from DataStore and
+contacts from `ContactsContract`. The dependencies are AndroidX/Compose, kotlinx-coroutines and
+`maps-compose`. Maps Compose is only used when Google Play services and a Maps key are both available;
+see [Maps](#maps).
 
-**Type:** on Pixels the app uses the system's own per-style Google Sans Flex families
-(`variable-body-large`, `variable-title-medium-emphasized`, …, from
+**Type.** On Pixels the app uses the system's own per-style Google Sans Flex families
+(`variable-body-large`, `variable-title-medium-emphasized`, … from
 `/product/etc/fonts_customization.xml`) with letter spacing 0, so text matches the system exactly.
 Elsewhere it falls back to a bundled, Latin-subset Google Sans Flex with the same weights and
-rounding. Google Sans Code is used for the pairing code and log. Fonts are from Google Fonts under
-the SIL OFL 1.1 (`app/src/main/assets/licenses/`).
+rounding. Google Sans Code is used for the pairing code and the log. Both fonts come from Google
+Fonts under the SIL OFL 1.1 (`app/src/main/assets/licenses/`).
 
-**Battery:** the GNSS chip dominates, so `LocationService` adapts its request (the current mode
-shows in the Me tab):
+## How it runs
+
+- **The `LocationService` foreground service** does the work while sharing is on: location, uploads
+  and the downlink stream. It shows an ongoing notification with **Sync now** and **Stop sharing**.
+  It starts when the app opens with location permission, so **after a reboot, open Ping once**.
+  There's no boot receiver, and Ping doesn't ask for background location.
+- **With sharing paused**, the app still streams friend updates, but only while it's on screen.
+- **The downlink** is one long-lived streaming connection to `<relay>/fmb-<channel>-down/json` with a
+  100 s read timeout (ntfy keepalives arrive every ~45 s). It reconnects with exponential backoff (5 s
+  to 5 min), honours `Retry-After`, and restarts whenever the pairing code changes.
+- **Uploads** go to the LAN/VPN address first if one is set, then to the relay.
+
+## Battery
+
+The GNSS chip dominates power use, so `LocationService` adapts its location request. The current
+mode shows in the **Me** tab.
 
 | Mode | When | Request |
 |---|---|---|
-| Precise | App on screen | High accuracy, every 5 s |
-| Moving | Background, Fast | High accuracy, every 15 s, 10 m filter |
-| Moving | Background, Balanced | Balanced power (Wi-Fi/cell), every 60 s, 25 m filter |
-| Moving | Background, Saver | Balanced power, every 3 min, 50 m filter, batched up to 6 min |
-| Stationary | No movement for 5 min | Passive only (fixes other apps already paid for); the significant-motion sensor switches back to Moving |
+| Precise | App on screen | High accuracy, every 5 s, 5 m filter |
+| Moving | Background, **Fast** | High accuracy, every 15 s, 10 m filter |
+| Moving | Background, **Balanced** | Balanced power (Wi-Fi/cell), every 60 s (≥ 30 s), 25 m filter |
+| Moving | Background, **Saver** | Balanced power, every 3 min (≥ 60 s), 50 m filter, batched up to 6 min |
+| Stationary | No movement beyond 75 m (or the fixes' combined accuracy) for 5 min | Passive only (fixes other apps already paid for). The significant-motion sensor switches back to Moving. Skipped on phones without that sensor. |
 
-Heartbeats while stationary take one balanced-power fix; Sync now and iPhone locate requests take
-one precise fix. The relay link is a single streaming connection (ntfy keepalive every 80 s, under
-Cloudflare's 100 s idle limit), and the notification only redraws when its text changes. Check
-with `adb shell dumpsys location | grep livebridge` and `adb shell dumpsys batterystats --charged`.
+What gets uploaded depends on the **Update frequency** setting:
 
-**Map provider:** Settings › Map provider is Auto, Google or OSM. Auto (and Google) use Google Maps
-(`GoogleLiveMap.kt`, Maps Compose) only when Google Play services works and the build has a key
-(`MAPS_API_KEY=` in `local.properties`, gitignored); otherwise the OpenStreetMap map is used. Both
-share one `MapCamera`, so switching keeps your place, and Google's blue dot is fed from the app's
-own fixes instead of a second location request. The key needs "Maps SDK for Android" enabled and an
-Android-app restriction for this package and SHA-1.
+| Cadence | Upload after moving | Heartbeat at least every |
+|---|---|---|
+| Fast | 15 m | 2 min |
+| Balanced (default) | 40 m | 5 min |
+| Saver | 100 m | 10 min |
 
-**Map:** OpenStreetMap tiles by default (with a colour-matrix dark mode), CARTO with an API key, or
-any `{z}/{x}/{y}` template. The map is read-only; there is no way to pick or enter a location.
+Movement uploads are at least 10 s apart. Heartbeats keep the iPhone's copy from expiring (20 min TTL
+by default); while stationary each one takes a single balanced-power fix. **Sync now**, opening the
+app, and the iPhone's `locate_request` each take one precise fix (or reuse a recent one within
+50 m). A background upload asks the iPhone to refresh friends at most every 15 minutes. The
+notification only redraws when its text changes.
+
+Check with:
+
+```bash
+adb shell dumpsys location | grep -i maynotfunction.ping
+```
+
+```bash
+adb shell dumpsys batterystats --charged uk.maynotfunction.ping
+```
+
+Some vendors' battery savers kill foreground services anyway. If updates stop in the background,
+set Ping's battery usage to *Unrestricted*.
+
+## Maps
+
+**Settings › Map provider** is *Auto*, *Google* or *OSM*. *Auto* and *Google* use Google Maps
+(`GoogleLiveMap.kt`, Maps Compose) only when Google Play services works and the build has a key.
+Otherwise the OpenStreetMap map is used, and the setting says why. Both maps share one `MapCamera`,
+so switching keeps your place. Google's blue dot is fed from the app's own fixes rather than a second
+location request.
+
+The OpenStreetMap map uses OSM's standard tiles by default (with a colour-matrix dark mode), CARTO
+basemaps if you paste a CARTO API key, or any `{z}/{x}/{y}` template URL (**Settings › OpenStreetMap
+tiles**). Tiles are cached in memory and in `cacheDir/tiles`. Both maps are read-only: there's no way
+to pick or enter a location.
 
 ## Build and install
 
-Needs JDK 21 and the Android SDK. Point `local.properties` at the SDK (`sdk.dir=...`). Release
-builds are minified with R8 and signed with a keystore at `keystore/debug.keystore` (gitignored;
-create one with `keytool`, or adjust `signingConfigs` in `app/build.gradle.kts`).
+Pre-built APKs are on [GitHub Releases](https://github.com/nickredible/ping/releases). To build it
+yourself, you need **JDK 21** and the Android SDK.
 
-For Google Maps, create a Google Cloud project, enable "Maps SDK for Android", and restrict the
-key to this package name and your keystore's SHA-1 (`keytool -list -v -keystore keystore/debug.keystore`).
-Put the key in `local.properties` as `MAPS_API_KEY=...`. Without it the app uses OpenStreetMap.
+1. Point `local.properties` at the SDK:
+   ```properties
+   sdk.dir=/path/to/Android/sdk
+   ```
+2. Create the signing keystore that `app/build.gradle.kts` expects. Release builds are minified with
+   R8 and signed with `keystore/debug.keystore` (gitignored), using store/key password `android` and
+   alias `androiddebugkey`:
+   ```bash
+   mkdir -p keystore && keytool -genkeypair -v -keystore keystore/debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Ping"
+   ```
+   Or point `signingConfigs` at your own keystore.
+3. *(Optional)* Google Maps: create a Google Cloud project, enable **Maps SDK for Android**, and
+   restrict the key to this package name and your keystore's SHA-1
+   (`keytool -list -v -keystore keystore/debug.keystore -storepass android`). Add it to
+   `local.properties`:
+   ```properties
+   MAPS_API_KEY=...
+   ```
+   Without it the app uses OpenStreetMap.
+4. Build and install:
+   ```bash
+   ./gradlew :app:assembleRelease
+   ```
+   ```bash
+   adb install -r app/build/outputs/apk/release/app-release.apk
+   ```
+   If your default Java isn't 21, prefix the build with `JAVA_HOME=…` (e.g.
+   `/opt/homebrew/opt/openjdk@21` with Homebrew).
+
+On first launch, allow location, notifications and (optionally) contacts, then paste the iPhone's
+pairing code under **Settings › Pairing code**. Ping generates a placeholder code of its own until you
+do.
+
+## Scripting
 
 ```bash
-JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew :app:assembleRelease
+adb shell am start -n uk.maynotfunction.ping/.ui.MainActivity -a uk.maynotfunction.ping.ACTION_PUBLISH_NOW
 ```
 
-```bash
-adb install -r app/build/outputs/apk/release/app-release.apk
-```
-
-Scripting: `adb shell am start -n uk.maynotfunction.ping/.ui.MainActivity -a uk.maynotfunction.ping.ACTION_PUBLISH_NOW`
-forces an upload (`ACTION_REFRESH_FRIENDS` asks the iPhone for friends). The old `pairing_code`
-intent extra is gone, since any app could have used it to redirect your location.
+This forces an upload. `ACTION_REFRESH_FRIENDS` asks the iPhone for friends instead. The old
+`pairing_code` intent extra is gone, because any app could have used it to redirect your location.

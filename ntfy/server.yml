@@ -1,0 +1,12 @@
+# ntfy server config for Ping. Mounted at /etc/ntfy/server.yml by compose.yml.
+base-url: "https://ntfy.example.com"
+listen-http: ":80"
+behind-proxy: true
+# proxy-forwarded-header: "X-Forwarded-For"   # whatever your proxy sets, for correct client IPs
+
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"   # nothing is readable or writable without a token
+web-root: "disable"               # no web UI
+
+cache-file: "/var/lib/ntfy/cache.db"
+cache-duration: "1h"              # the phones only replay the last 30–60 s on reconnect

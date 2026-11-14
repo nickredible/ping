@@ -1,94 +1,180 @@
-# Ping Relay — iOS tweak
+# Ping Relay: the iOS tweak
 
-A single-dylib jailbreak tweak for **iOS 15.4.1** (Dopamine rootless + ElleKit) that bridges Apple's
-Find My to an Android phone. It injects the Android location into Find My, captures friends'
-decrypted locations, and runs the encrypted relay hub. See
-[`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for how it fits together.
+A single-dylib jailbreak tweak for **iOS 15** (Dopamine rootless + ElleKit) that connects
+Apple's Find My to an Android phone. It injects the Android location into Find My, captures
+friends' decrypted locations, and runs the encrypted relay hub. See
+[`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for how the pieces fit together.
 
-> Targets iOS 15.4.1 and hooks that version's private Find My internals. Other versions aren't
-> supported.
+> [!WARNING]
+> It has only been tested on iOS 15.4.1. Other iOS 15 releases will likely work but are untested,
+> and so is anything newer. It hooks private Find My internals that can change between versions. It runs on a device signed into your Apple Account, and that account is at risk. Read
+> the warnings in the [top-level README](../README.md) first.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `Tweak.m` | The tweak: hooks, relay hub, and the native Settings pane (`FMBSettingsViewController`). |
-| `FMBShared.h` | Shared protocol code (CommonCrypto AES-GCM, `fmb1` envelope, pairing codes, validation, replay). Also used by [`../tools/test_e2ee_protocol.m`](../tools/test_e2ee_protocol.m). |
-| `FindMyLiveBridge.plist` | MobileSubstrate filter: which processes to load into. |
-| `control` | Debian package metadata; the **version** is read from here at build time. |
-| `build_deb.py` | Builds and signs the dylib and packages the rootless `.deb`. |
+| `Tweak.m` | The tweak: CoreLocation and Find My hooks, the relay hub, the LAN server and the native settings pane (`FMBSettingsViewController`). |
+| `FMBShared.h` | Shared protocol code: CommonCrypto AES-GCM, `fmb1` envelope, pairing codes, fix validation, replay protection. Also compiled by [`../tools/test_e2ee_protocol.m`](../tools/test_e2ee_protocol.m). |
+| `FindMyLiveBridge.plist` | ElleKit/Substrate filter: which processes the dylib loads into. |
+| `control` | Debian package metadata. The **version** is read from here at build time. |
+| `build_deb.py` | Compiles and ad-hoc signs the dylib and packages the rootless `.deb`. |
 
 ## Which processes it loads into
 
-Set by `FindMyLiveBridge.plist`, with different roles per process:
+The filter in `FindMyLiveBridge.plist` decides where it loads, and each process gets its own role:
 
-- **SpringBoard** — the relay hub: streams the uplink topic, decrypts, stores fixes, serves the LAN
-  endpoint, and publishes downlinks.
-- **`fmfd`**, **`FindMy.app`** — inject the Android location into CoreLocation; capture friends.
-- **`findmydeviced`**, **`searchpartyd`** — capture friends; `findmydeviced` also runs the on-demand
-  secure-location fetch (it holds the needed entitlement).
+| Process | Role |
+|---|---|
+| **SpringBoard** | Relay hub: streams the uplink topic, decrypts and stores fixes, publishes downlinks, serves the LAN endpoint on TCP 8765. |
+| **`fmfd`**, **`FindMy`** | Inject the Android location into CoreLocation; capture the friends list and friends' locations. Find My also gets a floating **Ping Relay** button. |
+| **`findmydeviced`**, **`searchpartyd`** | Capture friends; inject the location only if **Also Replace Device Location** is on. `findmydeviced` also runs the on-demand secure-location fetch, because it holds the needed entitlement. |
+| **Preferences** | Shows the settings pane, via PreferenceLoader. |
+
+The filter also matches the legacy Find My Friends bundle (`com.apple.mobileme.fmf1`), where the
+tweak does nothing.
 
 ## Build
 
-Requires Xcode command-line tools (for `xcrun`/`clang` against the iOS SDK). The version comes from
-`control`, so bump it there before building.
+Pre-built `.deb`s are on [GitHub Releases](https://github.com/nickredible/ping/releases). To build it
+yourself, you need Xcode (or its command-line tools) with the iOS SDK, for `xcrun` and `clang`.
 
 ```bash
 python3 build_deb.py
 ```
 
-This compiles `Tweak.m`, ad-hoc signs it, and writes `build/com.findmy.livebridge_<version>_iphoneos-arm64.deb`
-(the `build/` directory is gitignored).
+This compiles `Tweak.m` for arm64 (iOS 15.0+), ad-hoc signs it, and writes
+`build/com.findmy.livebridge_<version>_iphoneos-arm64.deb`. Older `.deb`s in `build/` are deleted,
+and `build/` is gitignored. The same dylib goes in twice: once as the tweak in
+`/var/jb/Library/MobileSubstrate/DynamicLibraries/`, and once as the `FindMyLiveBridgePrefs`
+preference bundle that PreferenceLoader opens.
+
+**To release a new version**, bump `Version:` in `control`, plus the version string in the LAN health
+response in `Tweak.m` (`"version":"…"`), which is hard-coded.
 
 ## Install
 
-The package depends on **PreferenceLoader** (for the Settings pane) and a substrate
-(ElleKit/libhooker), so install those from your package manager first, then:
+Install these from your package manager first: **ElleKit** (or another substrate) and
+**PreferenceLoader**. Then:
 
 ```bash
-# copy the .deb to the device, then as root:
-dpkg -i com.findmy.livebridge_<version>_iphoneos-arm64.deb
+scp build/com.findmy.livebridge_*_iphoneos-arm64.deb root@<iphone>:/tmp/
 ```
 
-**Respring afterwards** so SpringBoard loads the relay hub. The package's `postinst` restarts
-`fmfd`, `findmydeviced`, `searchpartyd`, Find My and Preferences.
+```bash
+ssh root@<iphone> 'dpkg -i /tmp/com.findmy.livebridge_*_iphoneos-arm64.deb'
+```
 
-Then set the iPhone as your location device: **Settings → [your name] → Find My → Use This iPhone
-as My Location**.
+**Respring afterwards** so SpringBoard loads the relay hub. The package's `postinst` kills `fmfd`,
+`findmydeviced`, `searchpartyd`, Find My and Preferences so they reload it; it doesn't respring.
+
+Then:
+
+1. **Settings → [your name] → Find My → Use This iPhone as My Location.**
+2. Open **Find My → People** once, so the tweak learns your friends' IDs and names.
+3. Configure the relay and pair (below).
+
+On first run the tweak creates a config with a fresh channel and key, `https://ntfy.sh` as the relay,
+and its own LAN address.
+
+To uninstall, run `dpkg -r com.findmy.livebridge` and respring. The config and state files under
+`/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.*` stay behind; delete them by hand.
 
 ## Settings pane
 
-Under **Settings → Ping Relay** (and a floating button inside the Find My app):
+It's under **Settings → Ping Relay**, and the floating button in Find My opens the same screen. It
+refreshes every 3 s.
 
-- **Enable Location Bridge** — master on/off.
-- **Pairing code** — copy it to Android, paste one in, or generate a new key. It contains the
-  encryption key; treat it like a password.
-- **Relay server / access token** — for a self-hosted ntfy server (see
-  [`../docs/RELAY.md`](../docs/RELAY.md)).
-- **Live Expiration TTL** — how long a fix stays valid without an update (default 20 min).
-- **Also Replace Device Location** — whether Find My iPhone and the offline-finding network also
-  report the Android position (on by default). Off leaves them on the iPhone's real GPS.
+**Live Location Bridge**
+- **Enable Location Bridge**: master switch. When it's off, no fix is stored or injected and
+  downlinks report `relayActive: false`.
+- **Bridge Status**: *Active (TTL …)*, *Waiting for Android GPS* or *Paused*.
+- **Android GPS Fix**: the stored coordinates and accuracy.
+- **Friends Synced**: how many friends are in `friends.json`.
 
-## Pairing
+**E2EE Internet Relay Pairing**
+- **Active Pairing Code**: tap it, or **Copy Pairing Code**, to copy. It contains the encryption
+  key; treat it like a password.
+- **Paste Pairing Code from Clipboard**: adopt a code generated by Ping. Keeps your Enable, TTL and
+  device-location settings.
+- **Generate New 256-Bit Pairing Key**: new channel and key, keeping the relay and token.
 
-The pairing code can be set over the loopback endpoint without showing it on screen:
+**Relay & TTL Settings**
+- **Internet Relay Server**: your ntfy URL. **Saving it generates a new channel and key**, so copy
+  the new code to Android afterwards.
+- **Relay Access Token**: `tk_…` for a self-hosted ntfy with auth ([`../docs/RELAY.md`](../docs/RELAY.md)).
+  Keeps the channel and key; only the code's `token=` part changes.
+- **Live Expiration TTL**: how long a fix stays valid without an update. Tap to cycle 10 → 20 → 30
+  min (default 20).
+- **Also Replace Device Location**: whether Find My iPhone and the offline-finding network also
+  report the Android position (on by default). Off leaves them on the iPhone's real GPS; Share My
+  Location still uses Android.
+
+**Daemon & Diagnostics**
+- **Push Friends List to Android Now**: starts an on-demand fetch and a `friends_state` push. The
+  push is skipped if the same list went out in the last 5 minutes.
+- **Expire Cached Android Fix Immediately**: deletes the stored fix, so Find My falls back to the
+  iPhone's own location until Android sends a new one.
+
+## Pairing over SSH
+
+The pairing code can be read or set over the loopback endpoint without showing it on screen:
 
 ```bash
-# on the device (or over SSH):
-curl -s http://127.0.0.1:8765/v1/pairing                       # read the current code
-curl -s -X POST --data-binary @code.txt http://127.0.0.1:8765/v1/pairing   # set a new code
+curl -s http://127.0.0.1:8765/v1/pairing
 ```
+
+```bash
+curl -s -X POST --data-binary @code.txt http://127.0.0.1:8765/v1/pairing
+```
+
+Run these on the device, e.g. `ssh root@<iphone> curl …`. Setting a code this way resets Enable, the
+TTL and Also Replace Device Location to their defaults. The current code is also in
+`/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.pairing.txt`.
+
+## Using it alongside OpenBubbles
+
+If the same Apple Account is used with OpenBubbles, disable `identityservicesd` on this iPhone, or
+Apple strips the phone number from the account after each OpenBubbles sign-in and OpenBubbles is
+logged out (error 6005):
+
+```bash
+launchctl unload -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
+```
+
+iMessage and FaceTime then stop working on this iPhone. To undo it, use `launchctl load -w` with the
+same path.
 
 ## Debugging
 
-Create a flag file to turn on verbose capture (into
-`…/Preferences/com.findmy.livebridge.debug.d/`): Find My request logs, raw friend replies, and
-private class dumps.
+Create a flag file to turn on verbose capture into
+`/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d/`:
 
 ```bash
 touch /var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug
 ```
 
-**Delete the flag and the `.debug.d` directory when done — the captures contain personal data.**
-The capture runs only while the flag file exists. A dump is written shortly after each hooked
-process launches, so restart the Find My daemons (or respring) to refresh it.
+| File in `debug.d/` | Contents |
+|---|---|
+| `fmf-requests.log` | Every Find My-related request from the hooked processes: process, method, host/path, status, size |
+| `<process>-<endpoint>.json` | The latest body of each `fmfmobile` friends reply |
+| `fmf-locations.log` | Friend-capture and on-demand-fetch events (counts, matched names, errors) |
+| `<process>-classes.txt` | Find My / secure-location Objective-C class dumps (names, methods, properties; no data), written ~8 s after each hooked process launches |
+
+Restart the Find My daemons (or respring) to refresh the class dumps. Capture only runs while the
+flag file exists.
+
+**Delete the flag and the `debug.d` folder when you're done. The captures contain personal data.**
+
+Two quick health checks:
+
+```bash
+curl -s http://127.0.0.1:8765/
+```
+
+```bash
+cat /var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.state.json
+```
+
+The first returns the hub's version if SpringBoard loaded the tweak. The second shows the current
+Android fix and its `expiresAtMs`.
