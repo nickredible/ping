@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.os.PersistableBundle
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,6 +32,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.painterResource
@@ -76,6 +79,7 @@ fun SettingsTab(
     val pairing = state.pairing
     var dialog by rememberSaveable { mutableStateOf<EditDialog?>(null) }
     var revealKey by rememberSaveable { mutableStateOf(false) }
+    var showDebug by rememberSaveable { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val mapsStatus = remember { googleMapsStatus(context) }
     val clipboard = LocalClipboard.current
@@ -90,11 +94,8 @@ fun SettingsTab(
                 modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp))
         }
 
+        // Turning sharing on/off lives in the Me tab.
         sectionHeader("Sharing")
-        item(key = "share") {
-            SwitchItem("Share my location", settings.sharingEnabled, vm::setSharing, segmentedShapes(0, 3),
-                R.drawable.ic_share_location, if (settings.sharingEnabled) "Friends see this phone's location" else "Paused")
-        }
         item(key = "cadence") {
             ChoiceCard(
                 title = "Update frequency",
@@ -104,7 +105,7 @@ fun SettingsTab(
                     Cadence.Saver -> "Every 100 m of movement, at least every 10 min"
                 },
                 icon = R.drawable.ic_speed,
-                index = 1, count = 3,
+                index = 0, count = 2,
             ) {
                 ConnectedChoice(Cadence.entries, settings.cadence, { it.label }, vm::setCadence)
             }
@@ -115,7 +116,7 @@ fun SettingsTab(
                     if (on && !hasContactsPermission) requestContactsPermission()
                     vm.setContactsMatching(on)
                 },
-                segmentedShapes(2, 3), R.drawable.ic_contacts,
+                segmentedShapes(1, 2), R.drawable.ic_contacts,
                 if (!hasContactsPermission) "Needs contacts permission" else null)
         }
 
@@ -198,16 +199,18 @@ fun SettingsTab(
                 R.drawable.ic_cloud_sync) { vm.restartOnboarding() }
         }
 
-        sectionHeader("Debug")
-        item(key = "preview") {
-            SwitchItem("Preview contacts when empty", settings.previewContacts, vm::setPreviewContacts,
-                segmentedShapes(0, 3), R.drawable.ic_bug_report, "Shows contacts at made-up positions")
+        item(key = "debugHeader") { DebugHeader(showDebug) { showDebug = !showDebug } }
+        if (showDebug) {
+            item(key = "preview") {
+                SwitchItem("Preview contacts when empty", settings.previewContacts, vm::setPreviewContacts,
+                    segmentedShapes(0, 3), R.drawable.ic_bug_report, "Shows contacts at made-up positions")
+            }
+            item(key = "clearFriends") {
+                ClickItem("Clear cached friends", "Removes the last list received from the iPhone", segmentedShapes(1, 3),
+                    R.drawable.ic_delete_sweep) { vm.clearCachedFriends(); showMessage("Cleared cached friends") }
+            }
+            item(key = "log") { LogCard(state.logs, onClear = vm::clearLog) }
         }
-        item(key = "clearFriends") {
-            ClickItem("Clear cached friends", "Removes the last list received from the iPhone", segmentedShapes(1, 3),
-                R.drawable.ic_delete_sweep) { vm.clearCachedFriends(); showMessage("Cleared cached friends") }
-        }
-        item(key = "log") { LogCard(state.logs, onClear = vm::clearLog) }
     }
 
     when (dialog) {
@@ -279,6 +282,27 @@ fun SettingsTab(
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
         )
         null -> Unit
+    }
+}
+
+/** Header of the Debug section, styled like the other section headers; tap to show or hide it. */
+@Composable
+private fun DebugHeader(expanded: Boolean, onToggle: () -> Unit) {
+    val rotation by androidx.compose.animation.core.animateFloatAsState(
+        if (expanded) 180f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "chevron")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Debug", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f))
+        Icon(painterResource(R.drawable.ic_expand_more), contentDescription = if (expanded) "Hide debug" else "Show debug",
+            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.rotate(rotation))
     }
 }
 

@@ -22,8 +22,8 @@ android {
         applicationId = "uk.maynotfunction.ping"
         minSdk = 31
         targetSdk = 37
-        versionCode = 10
-        versionName = "2.5.0"
+        versionCode = 11
+        versionName = "2.5.1"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("boolean", "HAS_MAPS_KEY", mapsApiKey.isNotEmpty().toString())
     }

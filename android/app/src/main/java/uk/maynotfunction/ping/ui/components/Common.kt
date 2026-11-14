@@ -1,6 +1,9 @@
 package uk.maynotfunction.ping.ui.components
 
 import android.graphics.Bitmap
+import android.icu.text.NumberFormat
+import android.icu.util.LocaleData
+import android.icu.util.ULocale
 import android.location.Location
 import android.text.format.DateUtils
 import androidx.compose.foundation.Image
@@ -85,5 +88,21 @@ fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Floa
     return out[0]
 }
 
-fun distanceLabel(meters: Float): String =
-    if (meters < 1000f) "${meters.roundToInt()} m" else String.format(Locale.getDefault(), "%.1f km", meters / 1000f)
+/** Miles where the locale's measurement system is US or UK (including the regional preference), else km. */
+private fun usesMiles(): Boolean {
+    val system = LocaleData.getMeasurementSystem(ULocale.getDefault(ULocale.Category.FORMAT))
+    return system == LocaleData.MeasurementSystem.US || system == LocaleData.MeasurementSystem.UK
+}
+
+/** "12 km" / "8 mi"; one decimal only below 1 ("0.4 mi"), and "<0.1" when very close. */
+fun distanceLabel(meters: Float): String {
+    val miles = usesMiles()
+    val unit = if (miles) "mi" else "km"
+    val value = meters / (if (miles) 1609.344f else 1000f)
+    val locale = Locale.getDefault(Locale.Category.FORMAT)
+    return when {
+        value < 0.1f -> "<${String.format(locale, "%.1f", 0.1f)} $unit"
+        value < 0.95f -> "${String.format(locale, "%.1f", value)} $unit"
+        else -> "${NumberFormat.getIntegerInstance(locale).format(value.roundToInt())} $unit"
+    }
+}
