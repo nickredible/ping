@@ -876,7 +876,8 @@ static NSDictionary *fmbFriendFromSecureLocation(id sl, NSDictionary *meta, BOOL
             @"lon": @(lon),
             @"hAcc": @(hAcc > 0 ? hAcc : 50.0),
             @"alt": @([[sl valueForKey:@"altitude"] doubleValue]),
-            @"timestampMs": @([ts isKindOfClass:[NSDate class]] ? (int64_t)(ts.timeIntervalSince1970 * 1000.0) : currentEpochMs()),
+            // 0 = unknown: Android shows no age, and any timed fix wins the merge over it.
+            @"timestampMs": @([ts isKindOfClass:[NSDate class]] ? (int64_t)(ts.timeIntervalSince1970 * 1000.0) : 0),
             @"address": [label isKindOfClass:[NSString class]] ? label : @"",
             @"status": @"live"
         };
@@ -1069,7 +1070,7 @@ static void extractAndStoreFriendsFromFMFJson(NSDictionary *json) {
             double lon  = [locObj[@"longitude"] doubleValue];
             double hAcc = locObj[@"horizontalAccuracy"] ? [locObj[@"horizontalAccuracy"] doubleValue] : 10.0;
             double alt  = locObj[@"altitude"] ? [locObj[@"altitude"] doubleValue] : 0.0;
-            int64_t ts  = locObj[@"timestamp"] ? [locObj[@"timestamp"] longLongValue] : currentEpochMs();
+            int64_t ts  = locObj[@"timestamp"] ? [locObj[@"timestamp"] longLongValue] : 0; // 0 = unknown
 
             NSString *addressStr = @"";
             NSDictionary *addr = locObj[@"address"];

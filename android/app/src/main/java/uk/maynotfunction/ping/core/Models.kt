@@ -35,7 +35,7 @@ data class FriendLocation(
                 lat = lat,
                 lon = lon,
                 hAcc = obj.optDouble("hAcc", 10.0),
-                timestampMs = obj.optLong("timestampMs", System.currentTimeMillis()),
+                timestampMs = obj.optLong("timestampMs", 0L), // 0 = unknown, shown without an age
                 address = cleanAppleLabel(obj.optString("address", "")),
             )
         }

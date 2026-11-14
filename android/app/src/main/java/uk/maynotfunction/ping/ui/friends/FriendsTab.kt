@@ -97,8 +97,12 @@ fun FriendsTab(
     }
 }
 
+/** How long ago Apple located [f], or null when the time is unknown (timestampMs 0). */
+private fun ageLabel(f: FriendUi, now: Long): String? =
+    f.timestampMs.takeIf { it > 0 }?.let { relativeTime(it, now) }
+
 private fun subtitle(f: FriendUi, now: Long): String =
-    listOfNotNull(f.address.takeIf { it.isNotBlank() }, relativeTime(f.timestampMs, now)).joinToString(" • ")
+    listOfNotNull(f.address.takeIf { it.isNotBlank() }, ageLabel(f, now)).joinToString(" • ")
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -215,7 +219,7 @@ private fun FriendDetail(
                         Text(f.name, style = MaterialTheme.typography.headlineSmall,
                             modifier = Modifier.sharedBounds(rememberSharedContentState("name-${f.id}"), animated))
                         Text(
-                            listOfNotNull(relativeTime(f.timestampMs, now), distance?.let { distanceLabel(it) }).joinToString(" • "),
+                            listOfNotNull(ageLabel(f, now), distance?.let { distanceLabel(it) }).joinToString(" • "),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -249,7 +253,7 @@ private fun FriendDetail(
         }
         val rows = buildList {
             if (f.address.isNotBlank()) add(Triple("Address", f.address, R.drawable.ic_location_on_filled))
-            add(Triple("Last updated", relativeTime(f.timestampMs, now), R.drawable.ic_schedule))
+            ageLabel(f, now)?.let { add(Triple("Last updated", it, R.drawable.ic_schedule)) }
             add(Triple("Accuracy", "±${f.accuracyM.roundToInt()} m", R.drawable.ic_my_location))
             if (f.handle.isNotBlank()) add(Triple("Apple ID", f.handle, R.drawable.ic_contacts))
             if (f.isPreview) add(Triple("Preview", "Position is made up for testing", R.drawable.ic_bug_report))

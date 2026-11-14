@@ -136,7 +136,7 @@ Each entry in `friends`:
 | `handle` | string | The friend's e-mail or phone number, if known |
 | `name` | string | From Apple's contact details, otherwise the handle, otherwise `Friend` |
 | `lat`, `lon`, `hAcc`, `alt` | double | |
-| `timestampMs` | int (ms) | When Apple located the friend |
+| `timestampMs` | int (ms) | When Apple located the friend; `0` if unknown (no age is shown) |
 | `address` | string | Place label or address; may be Apple's internal form (`_$!<Home>!$_`) |
 | `status` | string | `"live"` |
 
