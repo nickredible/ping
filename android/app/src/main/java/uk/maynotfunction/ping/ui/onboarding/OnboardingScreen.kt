@@ -171,6 +171,14 @@ fun OnboardingScreen(vm: MainViewModel) {
                 }
             }
 
+            if (step == Step.Welcome) {
+                Text(
+                    "Not affiliated with Apple or OpenBubbles. All names and trademarks belong to their respective holders.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                )
+            }
+
             // ---- Buttons ----
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 16.dp),

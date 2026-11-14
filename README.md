@@ -9,6 +9,9 @@
 > - **OpenBubbles users must disable `identityservicesd`** on the relay iPhone, or it interferes
 >   with the OpenBubbles relay ([step 6](#6-openbubbles-users-disable-identityservicesd)).
 
+> [!NOTE]
+> Not affiliated with Apple or OpenBubbles. All names and trademarks belong to their respective holders.
+
 ## What it does
 
 Apple only lets an iPhone or iPad be your **Share My Location** device. Ping gets around that:

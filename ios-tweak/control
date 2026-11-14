@@ -1,6 +1,6 @@
 Package: com.findmy.livebridge
 Name: Ping Relay
-Version: 1.4.8
+Version: 1.5.0
 Architecture: iphoneos-arm64
 Description: Ping Relay — two-way live location bridge for Apple Find My (fmfd) on Dopamine rootless (ElleKit), with native iOS Settings pane and E2EE (AES-256-GCM).
 Maintainer: Nick
