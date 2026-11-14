@@ -28,6 +28,7 @@ app/src/main/java/uk/maynotfunction/ping/
 └── ui/
     ├── MainActivity.kt, MainViewModel.kt, BridgeScreen.kt  Scaffold, tabs, toolbar, permissions
     ├── friends/ me/ settings/  The three tabs
+    ├── onboarding/          First-run setup: permissions, pairing, connection check, battery
     ├── map/                 LiveMap: Compose-canvas slippy map (TileLoader with memory + disk cache,
     │                        MapCamera pan/zoom/fling); GoogleLiveMap (Maps Compose); MapAvailability
     ├── components/          Avatar, list items, dialogs, formatting
@@ -48,6 +49,10 @@ rounding. Google Sans Code is used for the pairing code and the log. Both fonts 
 Fonts under the SIL OFL 1.1 (`app/src/main/assets/licenses/`).
 
 ## How it runs
+
+- **First run** shows setup instead of the map, until it's finished. Installs from before setup
+  existed skip it if they already have friends from the iPhone. **Settings → Run setup again**
+  brings it back.
 
 - **The `LocationService` foreground service** does the work while sharing is on: location, uploads
   and the downlink stream. It shows an ongoing notification with **Sync now** and **Stop sharing**.
@@ -146,9 +151,13 @@ yourself, you need **JDK 21** and the Android SDK.
    If your default Java isn't 21, prefix the build with `JAVA_HOME=…` (e.g.
    `/opt/homebrew/opt/openjdk@21` with Homebrew).
 
-On first launch, allow location, notifications and (optionally) contacts, then paste the iPhone's
-pairing code under **Settings › Pairing code**. Ping generates a placeholder code of its own until you
-do.
+On first launch Ping runs its setup (permissions, pairing, connection check, battery). To try setup
+without touching an installed copy, build a debug APK with its own package name and install it next
+to it:
+
+```bash
+./gradlew :app:assembleDebug -Pping.appIdSuffix=.test
+```
 
 ## Scripting
 

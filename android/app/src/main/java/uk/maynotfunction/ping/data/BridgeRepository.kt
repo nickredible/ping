@@ -47,6 +47,8 @@ data class Settings(
     val mapStyle: MapStyle = MapStyle.Auto,
     val mapProvider: MapProvider = MapProvider.Auto,
     val cachedFriendsJson: String = "",
+    /** False until the first-run setup is finished (or skipped). */
+    val onboardingDone: Boolean = false,
 ) {
     val pairing: PairingConfig? get() = PairingCode.parse(pairingCode)
 }
@@ -77,6 +79,7 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
         val mapStyle = intPreferencesKey("map_style")
         val mapProvider = intPreferencesKey("map_provider")
         val friends = stringPreferencesKey("cached_friends_json")
+        val onboarded = booleanPreferencesKey("onboarding_done")
     }
 
     val settings: StateFlow<Settings> = store.data
@@ -92,6 +95,9 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
                 mapStyle = MapStyle.entries.getOrElse(p[Keys.mapStyle] ?: 0) { MapStyle.Auto },
                 mapProvider = MapProvider.entries.getOrElse(p[Keys.mapProvider] ?: 0) { MapProvider.Auto },
                 cachedFriendsJson = p[Keys.friends].orEmpty(),
+                // Installs from before setup existed count as set up if they've received friends
+                // (made permanent in init, before any new friends can arrive).
+                onboardingDone = p[Keys.onboarded] ?: !p[Keys.friends].isNullOrEmpty(),
             )
         }
         .stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -130,6 +136,9 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
                 if (PairingCode.parse(p[Keys.pairing]) == null) {
                     p[Keys.pairing] = PairingCode.generate(null, null, null)
                 }
+                // Decide once whether setup is needed. Without this, friends arriving during
+                // setup (the connection check fetches them) would end it early.
+                if (p[Keys.onboarded] == null) p[Keys.onboarded] = !p[Keys.friends].isNullOrEmpty()
             }
             log("Bridge ready (AES-256-GCM)")
         }
@@ -208,6 +217,7 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
     suspend fun setMapStyle(style: MapStyle) = store.edit { it[Keys.mapStyle] = style.ordinal }
     suspend fun setMapProvider(provider: MapProvider) = store.edit { it[Keys.mapProvider] = provider.ordinal }
     suspend fun clearCachedFriends() = store.edit { it.remove(Keys.friends) }
+    suspend fun setOnboardingDone(done: Boolean) = store.edit { it[Keys.onboarded] = done }
 
     /** Saves [code] if it parses; returns false otherwise. */
     suspend fun setPairingCode(code: String): Boolean {

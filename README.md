@@ -98,21 +98,19 @@ install it.
 **Or build it** with JDK 21 and the Android SDK: `cd android && ./gradlew :app:assembleRelease`.
 Signing and the optional Google Maps key are covered in [`android/README.md`](android/README.md).
 
-Open Ping and allow location, notifications and, for friends' names and photos, contacts.
+### 5. Run Ping's setup
 
-### 5. Pair
+Open Ping. Setup walks you through permissions, pairing, a connection check and battery settings.
+To pair, copy the code on the iPhone (**Settings → Ping Relay → Copy Pairing Code**) and move it to
+the Android phone over a channel you trust, since it contains the encryption key. You can also read it
+over SSH without it showing on screen:
 
-Move the code over a channel you trust; it contains the encryption key.
+```bash
+ssh root@<iphone> curl -s http://127.0.0.1:8765/v1/pairing
+```
 
-1. Copy it on the iPhone (**Settings → Ping Relay → Copy Pairing Code**), or read it over SSH
-   without it showing on screen:
-   ```bash
-   ssh root@<iphone> curl -s http://127.0.0.1:8765/v1/pairing
-   ```
-2. In Ping: **Settings → Pairing code → Paste**.
-
-To check it works: the iPhone's **Bridge Status** says *Active*, Ping's **Me** tab shows a recent
-upload and **Relay iPhone: Active**, and friends appear within a few seconds.
+Afterwards the iPhone's **Bridge Status** says *Active*. To redo setup, go to **Settings → Run setup
+again**.
 
 ### 6. OpenBubbles users: disable `identityservicesd`
 

@@ -13,6 +13,7 @@ import uk.maynotfunction.ping.core.LogLine
 import uk.maynotfunction.ping.core.MyFix
 import uk.maynotfunction.ping.data.MapProvider
 import uk.maynotfunction.ping.data.MapStyle
+import uk.maynotfunction.ping.data.RelayClient
 import uk.maynotfunction.ping.data.RelayStatus
 import uk.maynotfunction.ping.data.Settings
 import uk.maynotfunction.ping.service.LocationService
@@ -22,13 +23,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Immutable
 data class FriendUi(
@@ -44,6 +48,9 @@ data class FriendUi(
     val address: String,
     val isPreview: Boolean,
 )
+
+/** Result of the setup screen's connection check. */
+class SetupCheck(val connection: RelayClient.ConnectionCheck, val iphoneAnswered: Boolean)
 
 @Immutable
 data class UiState(
@@ -180,6 +187,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun rotateKey() = viewModelScope.launch { repo.rotateKey() }
     fun clearLog() = repo.clearLog()
     fun clearCachedFriends() = viewModelScope.launch { repo.clearCachedFriends() }
+
+    // ---- First-run setup --------------------------------------------------------------------------
+
+    fun finishOnboarding() = viewModelScope.launch {
+        repo.setOnboardingDone(true)
+        repo.log("Setup finished")
+    }
+
+    fun restartOnboarding() = viewModelScope.launch { repo.setOnboardingDone(false) }
+
+    /**
+     * Checks the relay and LAN link, then listens on the downlink for up to [listenMs] for the
+     * iPhone's answer. Anything that decrypts there proves the iPhone has the same code.
+     */
+    suspend fun runSetupCheck(listenMs: Long = 15_000): SetupCheck = coroutineScope {
+        val before = repo.status.value.lastDownlinkMs
+        val listener = launch { relay.streamDownlink { } }
+        try {
+            val connection = relay.checkConnection()
+            val answered = connection.lan == RelayClient.CheckResult.Ok ||
+                (connection.relay == RelayClient.CheckResult.Ok &&
+                    withTimeoutOrNull(listenMs) { repo.status.first { it.lastDownlinkMs > before } } != null)
+            SetupCheck(connection, answered)
+        } finally {
+            listener.cancel()
+        }
+    }
 
     fun setPairingCode(code: String, onResult: (Boolean) -> Unit) =
         viewModelScope.launch { onResult(repo.setPairingCode(code)) }

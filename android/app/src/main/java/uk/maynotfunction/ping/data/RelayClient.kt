@@ -45,6 +45,16 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
 
     private class HttpResult(val code: Int, val retryAfterMs: Long?, val error: String?)
 
+    enum class CheckResult { Ok, Rejected, Unreachable, Skipped }
+
+    /** Outcome of [checkConnection]; the details are short, user-facing reasons. */
+    class ConnectionCheck(
+        val relay: CheckResult,
+        val relayDetail: String?,
+        val lan: CheckResult,
+        val lanDetail: String?,
+    )
+
     private suspend fun pairing(): PairingConfig? = repo.awaitSettings().pairing
 
     suspend fun publishLocation(location: Location, requestFriendsRefresh: Boolean): Boolean {
@@ -78,6 +88,53 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
             .put("requestFriendsRefresh", true)
             .put("sentTimeMs", System.currentTimeMillis())
         return sendUp(cfg, payload, recordResult = false)
+    }
+
+    /**
+     * One-off check for the setup screen. Sends a refresh request to the relay and, if the
+     * pairing code has one, to the LAN address. A LAN reply proves the iPhone holds the same key.
+     * The relay only proves the server and token work: the iPhone's answer arrives on the downlink.
+     */
+    suspend fun checkConnection(): ConnectionCheck = withContext(Dispatchers.IO) {
+        val cfg = pairing() ?: return@withContext ConnectionCheck(
+            CheckResult.Skipped, "No pairing code", CheckResult.Skipped, null)
+        fun refreshEnvelope() = Envelope.encrypt(
+            JSONObject()
+                .put("type", "refresh_request")
+                .put("seq", upSeq.next())
+                .put("requestFriendsRefresh", true)
+                .put("sentTimeMs", System.currentTimeMillis()),
+            Envelope.UP, cfg,
+        )
+
+        val (lan, lanDetail) = cfg.lanEndpoint?.let { endpoint ->
+            runCatching { lanSync(cfg, endpoint, refreshEnvelope()) }.fold(
+                onSuccess = { (code, payload) ->
+                    when {
+                        code == 401 -> CheckResult.Rejected to "The iPhone doesn't recognise this code"
+                        code !in 200..299 -> CheckResult.Unreachable to "HTTP $code"
+                        payload == null -> CheckResult.Rejected to "Couldn't decrypt the iPhone's reply"
+                        else -> CheckResult.Ok to null
+                    }
+                },
+                onFailure = { CheckResult.Unreachable to (it.message ?: it.javaClass.simpleName) },
+            )
+        } ?: (CheckResult.Skipped to null)
+
+        val (relay, relayDetail) = runCatching {
+            post("${cfg.relayUrl}/fmb-${cfg.channelId}-up", refreshEnvelope(), cfg.relayToken, 8_000)
+        }.fold(
+            onSuccess = { r ->
+                when {
+                    r.code in 200..299 -> CheckResult.Ok to null
+                    r.code == 401 || r.code == 403 -> CheckResult.Rejected to "Access token rejected (HTTP ${r.code})"
+                    r.code == 429 -> CheckResult.Ok to "Reachable, but rate-limited right now"
+                    else -> CheckResult.Unreachable to "HTTP ${r.code}${r.error?.let { ": $it" } ?: ""}"
+                }
+            },
+            onFailure = { CheckResult.Unreachable to (it.message ?: it.javaClass.simpleName) },
+        )
+        ConnectionCheck(relay, relayDetail, lan, lanDetail)
     }
 
     private suspend fun sendUp(cfg: PairingConfig, payload: JSONObject, recordResult: Boolean): Boolean =
@@ -200,7 +257,14 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
         repo.applyDownlink(payload)
     }
 
-    private suspend fun tryLanSync(cfg: PairingConfig, lan: String, envelope: String): Boolean = runCatching {
+    private suspend fun tryLanSync(cfg: PairingConfig, lan: String, envelope: String): Boolean =
+        runCatching { lanSync(cfg, lan, envelope).first in 200..299 }.getOrDefault(false)
+
+    /**
+     * POSTs [envelope] to the iPhone's `/v1/sync` and applies the reply. Returns the HTTP code and
+     * the decrypted reply (null if it didn't decrypt); throws if the iPhone can't be reached.
+     */
+    private suspend fun lanSync(cfg: PairingConfig, lan: String, envelope: String): Pair<Int, JSONObject?> {
         val conn = (URL("http://$lan/v1/sync").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 2_500
@@ -210,16 +274,16 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
         }
         try {
             conn.outputStream.use { it.write(envelope.toByteArray()) }
-            if (conn.responseCode !in 200..299) return false
+            val code = conn.responseCode
+            if (code !in 200..299) return code to null
             val body = conn.inputStream.bufferedReader().readText()
-            Envelope.decrypt(JSONObject(body), Envelope.DOWN, cfg)
-                ?.takeIf { downSeq.accept(it) }
-                ?.let { repo.applyDownlink(it) }
-            true
+            val payload = runCatching { Envelope.decrypt(JSONObject(body), Envelope.DOWN, cfg) }.getOrNull()
+            payload?.takeIf { downSeq.accept(it) }?.let { repo.applyDownlink(it) }
+            return code to payload
         } finally {
             conn.disconnect()
         }
-    }.getOrDefault(false)
+    }
 
     private fun post(url: String, body: String, token: String?, timeoutMs: Int): HttpResult {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {

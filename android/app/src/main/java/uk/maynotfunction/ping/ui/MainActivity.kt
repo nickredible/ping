@@ -6,8 +6,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import uk.maynotfunction.ping.service.LocationService
+import uk.maynotfunction.ping.ui.onboarding.OnboardingScreen
 import uk.maynotfunction.ping.ui.theme.BridgeTheme
+
+private enum class Screen { Loading, Setup, Main }
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -18,7 +29,20 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
         setContent {
             BridgeTheme {
-                BridgeScreen(viewModel)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                val screen = when {
+                    !state.settings.loaded -> Screen.Loading
+                    !state.settings.onboardingDone -> Screen.Setup
+                    else -> Screen.Main
+                }
+                Crossfade(screen, label = "screen") { current ->
+                    when (current) {
+                        // Plain background for the moment before settings load, so setup never flashes.
+                        Screen.Loading -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainer))
+                        Screen.Setup -> OnboardingScreen(viewModel)
+                        Screen.Main -> BridgeScreen(viewModel)
+                    }
+                }
             }
         }
     }

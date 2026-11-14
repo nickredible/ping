@@ -134,10 +134,18 @@ fun BridgeScreen(vm: MainViewModel) {
         }
         if (context.hasLocation()) vm.onResumed(hasLocationPermission = true)
     }
+    // Setup asks for everything with an explanation. Here, only re-ask for what's in use: location
+    // while sharing, and (Android 17+) local network access when a LAN/VPN address is set.
     LaunchedEffect(Unit) {
-        val wanted = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS)
-        val missing = wanted.filterNot { context.granted(it) }
+        val missing = buildList {
+            if (state.settings.sharingEnabled && !context.hasLocation()) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION); add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 37 && state.pairing?.lanEndpoint != null &&
+                !context.granted("android.permission.ACCESS_LOCAL_NETWORK")) {
+                add("android.permission.ACCESS_LOCAL_NETWORK")
+            }
+        }
         if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
     }
     LifecycleResumeEffect(Unit) {

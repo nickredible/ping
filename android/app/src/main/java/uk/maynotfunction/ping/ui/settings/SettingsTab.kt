@@ -183,6 +183,12 @@ fun SettingsTab(
                 segmentedShapes(2, 3), R.drawable.ic_map) { dialog = EditDialog.Tiles }
         }
 
+        sectionHeader("Help")
+        item(key = "setup") {
+            ClickItem("Run setup again", "Permissions, pairing, connection check and battery", segmentedShapes(0, 1),
+                R.drawable.ic_cloud_sync) { vm.restartOnboarding() }
+        }
+
         sectionHeader("Debug")
         item(key = "preview") {
             SwitchItem("Preview contacts when empty", settings.previewContacts, vm::setPreviewContacts,

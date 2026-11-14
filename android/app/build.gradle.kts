@@ -38,6 +38,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // `-Pping.appIdSuffix=.test` installs a debug build next to the real app, e.g. to try setup.
+            (project.findProperty("ping.appIdSuffix") as String?)?.let { applicationIdSuffix = it }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
