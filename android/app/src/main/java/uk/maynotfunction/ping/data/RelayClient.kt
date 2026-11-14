@@ -121,7 +121,7 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
             )
         } ?: (CheckResult.Skipped to null)
 
-        val (relay, relayDetail) = runCatching {
+        val (relay, relayDetail) = if (!cfg.relayEnabled) CheckResult.Skipped to "Not used" else runCatching {
             post("${cfg.relayUrl}/fmb-${cfg.channelId}-up", refreshEnvelope(), cfg.relayToken, 8_000)
         }.fold(
             onSuccess = { r ->
@@ -145,6 +145,12 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
                     if (recordResult) repo.recordUploadSuccess("LAN/VPN")
                     return@withContext true
                 }
+            }
+
+            if (!cfg.relayEnabled) {
+                if (recordResult) repo.recordUploadFailure(
+                    cfg.lanEndpoint?.let { "Relay iPhone not reachable at $it" } ?: "No LAN/VPN address set")
+                return@withContext false
             }
 
             val now = System.currentTimeMillis()
@@ -189,7 +195,7 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
                 delay(10_000)
                 continue
             }
-            val end = streamOnce(cfg, onLocateRequest)
+            val end = if (cfg.relayEnabled) streamOnce(cfg, onLocateRequest) else streamLanOnce(cfg, onLocateRequest)
             if (end.connected) {
                 backoff = MIN_BACKOFF_MS
                 lastError = null
@@ -221,6 +227,49 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
                     val r = readError(conn, code)
                     return@withContext StreamEnd(false, r.retryAfterMs,
                         "HTTP $code${r.error?.let { ": $it" } ?: ""}")
+                }
+                conn.inputStream.bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        handleDownlinkLine(line, cfg, onLocateRequest)
+                    }
+                }
+                StreamEnd(true, null, null)
+            }
+        } catch (e: Exception) {
+            StreamEnd(false, null, e.message ?: e.javaClass.simpleName)
+        } finally {
+            closer.cancel()
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * LAN/VPN-only downlink: holds `POST /v1/stream` open on the iPhone. The body is an encrypted
+     * `subscribe` message, which proves the key; the reply is one encrypted envelope per line
+     * (starting with the current friends) plus `{"event":"keepalive"}` lines every ~45 s.
+     */
+    private suspend fun streamLanOnce(cfg: PairingConfig, onLocateRequest: suspend () -> Unit): StreamEnd = coroutineScope {
+        val lan = cfg.lanEndpoint ?: return@coroutineScope StreamEnd(false, null, "No LAN/VPN address set")
+        val conn = (URL("http://$lan/v1/stream").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 5_000
+            readTimeout = 100_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+        }
+        val closer = launch { try { awaitCancellation() } finally { conn.disconnect() } }
+        try {
+            withContext(Dispatchers.IO) {
+                val subscribe = JSONObject()
+                    .put("type", "subscribe")
+                    .put("seq", upSeq.next())
+                    .put("sentTimeMs", System.currentTimeMillis())
+                conn.outputStream.use { it.write(Envelope.encrypt(subscribe, Envelope.UP, cfg).toByteArray()) }
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    return@withContext StreamEnd(false, null,
+                        if (code == 401) "Relay iPhone rejected the pairing code" else "HTTP $code from the relay iPhone")
                 }
                 conn.inputStream.bufferedReader().use { reader ->
                     while (true) {

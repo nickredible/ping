@@ -358,7 +358,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     } else if (section == 1) {
         return @"All location packets are end-to-end encrypted with AES-256-GCM before leaving your devices. Copy this code to the Ping app on your Android device.";
     } else if (section == 2) {
-        return @"The access token is only needed for a self-hosted ntfy server with authentication; changing the server or token creates a new pairing code. \"Also Replace Device Location\" makes Find My iPhone and the offline finding network report the Android location too. Turn it off to leave them on this iPhone's own GPS (Share My Location still uses Android).";
+        return @"The access token is only needed for a self-hosted ntfy server with authentication; changing the server or token creates a new pairing code. With no relay, Ping talks to this iPhone only over its LAN/VPN address, so both phones must share a network or VPN (e.g. Tailscale). \"Also Replace Device Location\" makes Find My iPhone and the offline finding network report the Android location too. Turn it off to leave them on this iPhone's own GPS (Share My Location still uses Android).";
     }
     return nil;
 }
@@ -453,12 +453,14 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Internet Relay Server";
-            cell.detailTextLabel.text = cfg[@"relayUrl"] ?: @"https://ntfy.sh";
+            cell.detailTextLabel.text = fmbRelayEnabled(cfg[@"relayUrl"]) ? cfg[@"relayUrl"]
+                                      : (cfg[@"relayUrl"] ? @"None (LAN/VPN only)" : @"https://ntfy.sh");
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else if (indexPath.row == 1) {
             cell.textLabel.text = @"Relay Access Token";
             NSString *token = cfg[@"relayToken"];
-            cell.detailTextLabel.text = ([token isKindOfClass:[NSString class]] && token.length > 4)
+            cell.detailTextLabel.text = !fmbRelayEnabled(cfg[@"relayUrl"] ?: @"https://ntfy.sh") ? @"Not used"
+                                        : ([token isKindOfClass:[NSString class]] && token.length > 4)
                                         ? [NSString stringWithFormat:@"Set (…%@)", [token substringFromIndex:token.length - 4]]
                                         : @"None";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -544,12 +546,19 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
     } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
             UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Internet Relay Server URL"
-                                                                        message:@"Enter the base URL for the E2EE pub/sub relay (default: https://ntfy.sh):"
+                                                                        message:@"Enter the base URL for the E2EE pub/sub relay (default: https://ntfy.sh), or choose No Relay if both phones share a LAN or VPN. Either way this creates a new pairing code."
                                                                  preferredStyle:UIAlertControllerStyleAlert];
             [ac addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-                tf.text = cfg[@"relayUrl"] ?: @"https://ntfy.sh";
+                tf.text = fmbRelayEnabled(cfg[@"relayUrl"] ?: @"https://ntfy.sh") ? (cfg[@"relayUrl"] ?: @"https://ntfy.sh") : @"https://";
                 tf.keyboardType = UIKeyboardTypeURL;
             }];
+            [ac addAction:[UIAlertAction actionWithTitle:@"No Relay (LAN/VPN Only)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+                regenerateBridgeConfig(cfg, kFMBNoRelay, nil);
+                [self.tableView reloadData];
+                NSString *lan = loadOrCreateBridgeConfig()[@"lanEndpoint"] ?: @"?";
+                [self showToastAlert:@"LAN/VPN Only"
+                             message:[NSString stringWithFormat:@"Ping will reach this iPhone at %@ with no relay. Copy the new pairing code to Android.", lan]];
+            }]];
             [ac addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
             [ac addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
                 NSString *newUrl = [ac.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -560,6 +569,8 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
                 }
             }]];
             [self presentViewController:ac animated:YES completion:nil];
+        } else if (indexPath.row == 1 && !fmbRelayEnabled(cfg[@"relayUrl"] ?: @"https://ntfy.sh")) {
+            [self showToastAlert:@"No Relay" message:@"An access token is only used with a relay server."];
         } else if (indexPath.row == 1) {
             UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Relay Access Token"
                                                                         message:@"Access token for a self-hosted ntfy server (tk_…). Leave empty for none. Copy the updated pairing code to Android afterwards."
@@ -1409,6 +1420,80 @@ static NSObject *gSeqLock = nil;
 static int64_t gLastAcceptedUpSeq = 0;
 static int64_t gLastSentDownSeq = 0;
 
+// ---- LAN/VPN downlink stream ----
+// With LAN/VPN-only pairing there's no relay to push through, so Android holds POST /v1/stream
+// open and the hub writes each encrypted downlink envelope to it as one line (the same shape as
+// ntfy's JSON stream), with keepalive lines in between. The sockets are only touched on gLanQueue.
+static const NSUInteger kMaxLanSubscribers = 4;
+static const int64_t kLanKeepaliveSec = 45;
+static NSMutableArray<NSNumber *> *gLanSubscribers = nil;
+static dispatch_queue_t gLanQueue = nil;
+static dispatch_source_t gLanKeepaliveTimer = nil;
+
+static BOOL sendAllOk(int fd, NSData *data) {
+    const uint8_t *p = data.bytes;
+    size_t left = data.length;
+    while (left > 0) {
+        ssize_t n = send(fd, p, left, 0);
+        if (n <= 0) return NO;
+        p += n;
+        left -= (size_t)n;
+    }
+    return YES;
+}
+
+// Writes [line] to every subscriber, dropping any whose connection has gone.
+static void lanBroadcastLine(NSString *line) {
+    NSData *data = [[line stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return;
+    dispatch_async(gLanQueue, ^{
+        for (NSNumber *fd in [gLanSubscribers copy]) {
+            if (!sendAllOk(fd.intValue, data)) {
+                close(fd.intValue);
+                [gLanSubscribers removeObject:fd];
+            }
+        }
+    });
+}
+
+// Takes ownership of [fd]: sends the response headers and [firstLine], then keeps it open.
+static void lanAddSubscriber(int fd, NSString *firstLine) {
+    dispatch_async(gLanQueue, ^{
+        while (gLanSubscribers.count >= kMaxLanSubscribers) {
+            close(gLanSubscribers.firstObject.intValue);
+            [gLanSubscribers removeObjectAtIndex:0];
+        }
+        NSString *head = @"HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\n"
+                         @"Cache-Control: no-store\r\nConnection: close\r\n\r\n";
+        NSString *first = firstLine ? [firstLine stringByAppendingString:@"\n"] : @"";
+        if (!sendAllOk(fd, [[head stringByAppendingString:first] dataUsingEncoding:NSUTF8StringEncoding])) {
+            close(fd);
+            return;
+        }
+        [gLanSubscribers addObject:@(fd)];
+    });
+}
+
+// After a pairing change the subscribers hold the old key; they reconnect with the new one.
+static void lanDropAllSubscribers(void) {
+    dispatch_async(gLanQueue, ^{
+        for (NSNumber *fd in gLanSubscribers) close(fd.intValue);
+        [gLanSubscribers removeAllObjects];
+    });
+}
+
+static void startLanStreamHub(void) {
+    gLanSubscribers = [NSMutableArray array];
+    gLanQueue = dispatch_queue_create("com.findmy.livebridge.lanstream", DISPATCH_QUEUE_SERIAL);
+    gLanKeepaliveTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gLanQueue);
+    dispatch_source_set_timer(gLanKeepaliveTimer, dispatch_time(DISPATCH_TIME_NOW, kLanKeepaliveSec * NSEC_PER_SEC),
+                              kLanKeepaliveSec * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(gLanKeepaliveTimer, ^{
+        if (gLanSubscribers.count > 0) lanBroadcastLine(@"{\"event\":\"keepalive\"}");
+    });
+    dispatch_resume(gLanKeepaliveTimer);
+}
+
 static NSDictionary *buildDownlinkPayload(NSString *msgType) {
     NSDictionary *liveState = loadLiveState();
     NSString *friendsPath = resolvePath(kFriendsPathRootless, kFriendsPathFallback);
@@ -1453,19 +1538,26 @@ static int64_t retryAfterMs(NSHTTPURLResponse *http) {
     return secs > 0 ? (int64_t)(secs * 1000) : 60 * 1000;
 }
 
-static void publishDownlinkToInternetRelay(NSString *msgType, BOOL force) {
+// Sends a downlink message to any LAN/VPN stream subscribers and, unless the pairing is
+// LAN/VPN only, publishes it to the relay's downlink topic.
+static void publishDownlink(NSString *msgType, BOOL force) {
     NSDictionary *cfg = loadOrCreateBridgeConfig();
     if (!cfg) return;
+    NSString *relayUrl  = cfg[@"relayUrl"];
+    NSString *channelId = cfg[@"channelId"];
+    NSData *keyData     = [[NSData alloc] initWithBase64EncodedString:cfg[@"keyBase64"] options:0];
+    if (!channelId || keyData.length != 32) return;
+
+    NSDictionary *downPayload = buildDownlinkPayload(msgType);
+    NSString *envJson = encryptEnvelopeJson(downPayload, @"down", channelId, keyData);
+    if (!envJson) return;
+    lanBroadcastLine(envJson);
+
+    if (!fmbRelayEnabled(relayUrl)) return;
     int64_t nowMs = currentEpochMs();
     @synchronized (gSeqLock) {
         if (nowMs < gRelayBlockedUntilMs) return;
     }
-    NSString *relayUrl  = cfg[@"relayUrl"];
-    NSString *channelId = cfg[@"channelId"];
-    NSData *keyData     = [[NSData alloc] initWithBase64EncodedString:cfg[@"keyBase64"] options:0];
-    if (!relayUrl || !channelId || keyData.length != 32) return;
-
-    NSDictionary *downPayload = buildDownlinkPayload(msgType);
     BOOL isFriends = [msgType isEqualToString:@"friends_state"];
     NSString *digest = nil;
     if (isFriends) {
@@ -1478,9 +1570,6 @@ static void publishDownlinkToInternetRelay(NSString *msgType, BOOL force) {
             }
         }
     }
-    NSString *envJson = encryptEnvelopeJson(downPayload, @"down", channelId, keyData);
-    if (!envJson) return;
-
     NSString *downUrlStr = [NSString stringWithFormat:@"%@/fmb-%@-down", relayUrl, channelId];
     NSURL *url = [NSURL URLWithString:downUrlStr];
     if (!url) return;
@@ -1505,17 +1594,19 @@ static void publishDownlinkToInternetRelay(NSString *msgType, BOOL force) {
     [task resume];
 }
 
-static void handleIncomingEncryptedEnvelopeString(NSString *rawString, NSString **responseEnvelopeOut) {
+// Decrypts an uplink envelope (bare, or wrapped in an ntfy event). Returns the payload, or nil if
+// it doesn't authenticate. Doesn't check seq; see acceptUplinkEnvelope.
+static NSDictionary *decryptUplinkEnvelope(NSString *rawString) {
     NSDictionary *cfg = loadOrCreateBridgeConfig();
-    if (!cfg) return;
+    if (!cfg) return nil;
     NSString *channelId = cfg[@"channelId"];
     NSData *keyData     = [[NSData alloc] initWithBase64EncodedString:cfg[@"keyBase64"] options:0];
-    if (!channelId || keyData.length != 32) return;
+    if (!channelId || keyData.length != 32) return nil;
 
     NSData *rawData = [rawString dataUsingEncoding:NSUTF8StringEncoding];
-    if (!rawData) return;
+    if (!rawData) return nil;
     NSDictionary *outer = [NSJSONSerialization JSONObjectWithData:rawData options:0 error:nil];
-    if (![outer isKindOfClass:[NSDictionary class]]) return;
+    if (![outer isKindOfClass:[NSDictionary class]]) return nil;
 
     NSDictionary *envDict = outer;
     if ([outer[@"message"] isKindOfClass:[NSString class]] && outer[@"ct"] == nil) {
@@ -1528,14 +1619,41 @@ static void handleIncomingEncryptedEnvelopeString(NSString *rawString, NSString 
         }
     }
 
-    NSDictionary *payload = decryptEnvelopeJson(envDict, @"up", channelId, keyData);
-    if (!payload) return;
+    return decryptEnvelopeJson(envDict, @"up", channelId, keyData);
+}
 
+// decryptUplinkEnvelope plus replay protection: seq must be recent and higher than any before.
+static NSDictionary *acceptUplinkEnvelope(NSString *rawString) {
+    NSDictionary *payload = decryptUplinkEnvelope(rawString);
+    if (!payload) return nil;
     BOOL fresh;
     @synchronized (gSeqLock) {
         fresh = fmbAcceptSeq(&gLastAcceptedUpSeq, payload, kMaxUplinkAgeMs, NULL);
     }
-    if (!fresh) return;
+    return fresh ? payload : nil;
+}
+
+// A /v1/stream subscribe only has to be recent: it doesn't advance gLastAcceptedUpSeq, so it can't
+// race the uplinks Android sends at the same time (a higher seq arriving first would reject the
+// other). Replaying one within the window only opens another stream of ciphertext.
+static BOOL isValidSubscribe(NSString *rawString) {
+    NSDictionary *payload = decryptUplinkEnvelope(rawString);
+    if (![payload[@"type"] isEqualToString:@"subscribe"]) return NO;
+    int64_t unused = 0;
+    return fmbAcceptSeq(&unused, payload, kMaxUplinkAgeMs, NULL);
+}
+
+/** Encrypted friends_state envelope with the current state, e.g. as a /v1/sync reply. */
+static NSString *currentFriendsStateEnvelope(void) {
+    NSDictionary *cfg = loadOrCreateBridgeConfig();
+    NSData *keyData = [[NSData alloc] initWithBase64EncodedString:cfg[@"keyBase64"] options:0];
+    if (!cfg[@"channelId"] || keyData.length != 32) return nil;
+    return encryptEnvelopeJson(buildDownlinkPayload(@"friends_state"), @"down", cfg[@"channelId"], keyData);
+}
+
+static void handleIncomingEncryptedEnvelopeString(NSString *rawString, NSString **responseEnvelopeOut) {
+    NSDictionary *payload = acceptUplinkEnvelope(rawString);
+    if (!payload) return;
 
     NSString *type = payload[@"type"] ?: @"location_update";
     if ([type isEqualToString:@"location_update"] && isBridgeEnabled()) {
@@ -1545,13 +1663,10 @@ static void handleIncomingEncryptedEnvelopeString(NSString *rawString, NSString 
 
     if ([payload[@"requestFriendsRefresh"] boolValue] || [type isEqualToString:@"refresh_request"]) {
         notify_post(kNotifyRequestFriendsRefresh);
-        publishDownlinkToInternetRelay(@"friends_state", YES);
+        publishDownlink(@"friends_state", YES);
     }
 
-    if (responseEnvelopeOut) {
-        NSDictionary *downPayload = buildDownlinkPayload(@"friends_state");
-        *responseEnvelopeOut = encryptEnvelopeJson(downPayload, @"down", channelId, keyData);
-    }
+    if (responseEnvelopeOut) *responseEnvelopeOut = currentFriendsStateEnvelope();
 }
 
 // Streams the uplink topic over one long-lived connection (ntfy JSON stream; keepalives every
@@ -1607,6 +1722,7 @@ static void startInternetRelayStream(void) {
     int cfgToken = 0;
     notify_register_dispatch(kNotifyConfigChanged, &cfgToken, dispatch_get_main_queue(), ^(int token) {
         [gStreamTask cancel];
+        lanDropAllSubscribers();
     });
 
     dispatch_queue_t q = dispatch_queue_create("com.findmy.livebridge.relaystream", DISPATCH_QUEUE_SERIAL);
@@ -1617,6 +1733,10 @@ static void startInternetRelayStream(void) {
                 NSDictionary *cfg = loadOrCreateBridgeConfig();
                 NSString *relayUrl  = cfg[@"relayUrl"];
                 NSString *channelId = cfg[@"channelId"];
+                if (!fmbRelayEnabled(relayUrl)) { // LAN/VPN-only pairing: nothing to subscribe to
+                    [NSThread sleepForTimeInterval:10.0];
+                    continue;
+                }
                 NSString *since = gLastSeenUpTimeSec > 0 ? [NSString stringWithFormat:@"%lld", gLastSeenUpTimeSec] : @"30s";
                 NSURL *url = (relayUrl && channelId)
                     ? [NSURL URLWithString:[NSString stringWithFormat:@"%@/fmb-%@-up/json?since=%@", relayUrl, channelId, since]]
@@ -1697,14 +1817,7 @@ static NSData *readHttpRequest(int fd, NSString **headersOut) {
 }
 
 static void sendAll(int fd, NSData *data) {
-    const uint8_t *p = data.bytes;
-    size_t left = data.length;
-    while (left > 0) {
-        ssize_t n = send(fd, p, left, 0);
-        if (n <= 0) return;
-        p += n;
-        left -= (size_t)n;
-    }
+    (void)sendAllOk(fd, data);
 }
 
 static void startLocalHttpServer(void) {
@@ -1755,6 +1868,13 @@ static void startLocalHttpServer(void) {
                     int statusCode = 200;
                     NSString *body = bodyData ? [[NSString alloc] initWithData:bodyData encoding:NSUTF8StringEncoding] : nil;
 
+                    // A valid, fresh uplink envelope (Android sends type "subscribe") proves the key;
+                    // the connection then stays open as a downlink stream, starting with the current state.
+                    if (body && [headers hasPrefix:@"POST /v1/stream "] && isValidSubscribe(body)) {
+                        lanAddSubscriber(clientFd, currentFriendsStateEnvelope());
+                        return;
+                    }
+
                     if (!bodyData || !headers || !body) {
                         statusCode = 400;
                         respBody = @"{\"ok\":false,\"error\":\"bad_request\"}";
@@ -1767,6 +1887,9 @@ static void startLocalHttpServer(void) {
                             statusCode = 401;
                             respBody = @"{\"ok\":false,\"error\":\"invalid_or_unauthorized_envelope\"}";
                         }
+                    } else if ([headers hasPrefix:@"POST /v1/stream "]) {
+                        statusCode = 401;
+                        respBody = @"{\"ok\":false,\"error\":\"invalid_or_unauthorized_envelope\"}";
                     } else if ([headers hasPrefix:@"GET /v1/pairing "] && isLoopback) {
                         NSDictionary *cfg = loadOrCreateBridgeConfig();
                         respBody = cfg[@"pairingCode"] ?: @"";
@@ -1799,17 +1922,18 @@ static void startLocalHttpServer(void) {
 static void initSpringBoardHub(void) {
     gSeqLock = [[NSObject alloc] init];
     loadOrCreateBridgeConfig();
+    startLanStreamHub();
     startLocalHttpServer();
     startInternetRelayStream();
 
     int friendsToken = 0;
     notify_register_dispatch(kNotifyFriendsUpdated, &friendsToken, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(int token) {
-        publishDownlinkToInternetRelay(@"friends_state", NO);
+        publishDownlink(@"friends_state", NO);
     });
 
     int locateToken = 0;
     notify_register_dispatch(kNotifyLocateNeeded, &locateToken, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(int token) {
-        publishDownlinkToInternetRelay(@"locate_request", YES);
+        publishDownlink(@"locate_request", YES);
     });
 }
 

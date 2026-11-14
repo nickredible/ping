@@ -63,6 +63,9 @@ Fonts under the SIL OFL 1.1 (`app/src/main/assets/licenses/`).
   100 s read timeout (ntfy keepalives arrive every ~45 s). It reconnects with exponential backoff (5 s
   to 5 min), honours `Retry-After`, and restarts whenever the pairing code changes.
 - **Uploads** go to the LAN/VPN address first if one is set, then to the relay.
+- **LAN/VPN only** (relay `none` in the pairing code): uploads go only to the LAN/VPN address, and
+  the downlink is a long-lived `POST /v1/stream` to the iPhone instead of the relay topic. On
+  Android 17+ either LAN path needs the local network permission.
 
 ## Battery
 

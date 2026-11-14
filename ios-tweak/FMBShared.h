@@ -121,6 +121,12 @@ static inline NSDictionary *decryptEnvelopeJson(NSDictionary *envDict, NSString 
 
 // fmb1:<relayUrl>:<channelId>:<base64Key>[?lan=<host:port>][&token=<relay access token>]
 // Only conservative characters are accepted for lan/token, since they end up in URLs and headers.
+// relayUrl "none" means LAN/VPN only: no relay at all, and then a lan= address is required.
+static NSString *const kFMBNoRelay = @"none";
+
+static inline BOOL fmbRelayEnabled(NSString *relayUrl) {
+    return [relayUrl isKindOfClass:[NSString class]] && relayUrl.length > 0 && ![relayUrl isEqualToString:kFMBNoRelay];
+}
 static inline BOOL fmbIsSafeParam(NSString *s, NSString *extraAllowed) {
     if (s.length == 0 || s.length > 200) return NO;
     NSMutableCharacterSet *ok = [NSMutableCharacterSet alphanumericCharacterSet];
@@ -179,7 +185,9 @@ static inline NSDictionary *fmbParsePairingCode(NSString *code) {
                         stringByReplacingOccurrencesOfString:@"_" withString:@"/"];
     while (stdB64.length % 4 != 0) stdB64 = [stdB64 stringByAppendingString:@"="];
     NSData *keyData = [[NSData alloc] initWithBase64EncodedString:stdB64 options:0];
-    if (keyData.length != 32 || channelId.length < 16 || relayUrl.length < 8) return nil;
+    if (keyData.length != 32 || channelId.length < 16) return nil;
+    BOOL lanOnly = [relayUrl isEqualToString:kFMBNoRelay];
+    if (lanOnly ? lanEndpoint == nil : relayUrl.length < 8) return nil;
 
     NSMutableDictionary *cfg = [@{
         @"relayUrl": relayUrl,

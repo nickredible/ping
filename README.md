@@ -55,10 +55,13 @@ set `base-url`, run `docker compose up -d`, create the token (commands are at th
 `compose.yml`), and put it behind HTTPS with response buffering off. Keep the URL and the `tk_…`
 token for step 3.
 
-**Direct LAN/VPN link (optional).** If both phones share a network or VPN (e.g. Tailscale or NetBird),
-Ping also posts straight to the iPhone on TCP 8765. The tweak puts its own address (preferring a
-`100.x` VPN address) in the pairing code, and you can change it in Ping under **Settings → Direct
-LAN/VPN address**. You still need a relay, because the iPhone uses it for every push it starts.
+**Or skip the relay with a VPN.** If both phones are always on the same VPN (e.g. Tailscale, which
+supports iOS 15), they can talk directly on TCP 8765 with no relay at all. On the iPhone, choose
+**Settings → Ping Relay → Internet Relay Server → No Relay (LAN/VPN Only)**, and pair as usual. The
+code then carries the iPhone's VPN address. The catch is that Ping only works while both phones are
+connected to the VPN. Details: [`docs/RELAY.md`](docs/RELAY.md#3-direct-lan--vpn).
+
+With a relay set, Ping still tries the LAN/VPN address first when it can reach it.
 
 ### 2. Install the tweak
 

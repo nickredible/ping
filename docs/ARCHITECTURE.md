@@ -24,7 +24,7 @@ position for the iPhone's own.
    LocationManager → LocationValidator                                   streams …-up, stores fix
    RelayClient ── POST ─────────────►  fmb-<channel>-up  ──stream──►     publishes …-down
                ◄── stream ───────────  fmb-<channel>-down ◄── POST ──    LAN server :8765
-               ── POST /v1/sync (optional LAN/VPN) ─────────────────►
+               ── POST /v1/sync, /v1/stream (LAN/VPN) ──────────────►
  BridgeRepository (DataStore, flows)                                   fmfd, FindMy: inject fix
  Compose UI: Friends · Me · Settings                                   findmydeviced, searchpartyd:
                                                                          capture friends, fetch on demand

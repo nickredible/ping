@@ -404,6 +404,7 @@ private fun CheckStep(pairing: PairingConfig?, vm: MainViewModel) {
         StatusRow(
             title = "Relay server",
             detail = when (c.relay) {
+                CheckResult.Skipped -> "Not used: this pairing code is LAN/VPN only"
                 CheckResult.Ok -> c.relayDetail ?: "Reachable at ${Uri.parse(pairing.relayUrl).host ?: pairing.relayUrl}"
                 CheckResult.Rejected -> "${c.relayDetail}. Check the token on both phones."
                 else -> "Can't reach it: ${c.relayDetail}"
@@ -416,16 +417,18 @@ private fun CheckStep(pairing: PairingConfig?, vm: MainViewModel) {
                 CheckResult.Ok -> "The iPhone answered directly"
                 CheckResult.Rejected -> "${c.lanDetail}. Copy the pairing code from the iPhone again."
                 else -> if (lanBlocked) "Android is blocking it until Ping can use the local network."
+                    else if (!pairing.relayEnabled) "Not reachable from here (${c.lanDetail})."
                     else "Not reachable from here (${c.lanDetail}). That's fine away from home or off the VPN."
             },
-            // An unreachable LAN address is expected away from home, so it isn't shown as an error.
-            status = if (c.lan == CheckResult.Unreachable) CheckResult.Skipped else c.lan,
+            // With a relay to fall back on, an unreachable LAN address (away from home) isn't an error.
+            status = if (c.lan == CheckResult.Unreachable && pairing.relayEnabled) CheckResult.Skipped else c.lan,
             index = 1, count = count,
         )
         StatusRow(
             title = "Relay iPhone",
             detail = when {
                 r.iphoneAnswered -> "Answered. Your friends will appear on the map."
+                !pairing.relayEnabled -> "Not reachable. Without a relay, both phones must be on the same network or VPN."
                 c.relay == CheckResult.Ok -> "No reply yet. If it sent your friends in the last few minutes it " +
                     "won't resend them, so this can be normal. Check that Bridge Status on the iPhone isn't Paused."
                 else -> "Fix the relay server first."
@@ -563,9 +566,10 @@ private fun PairedCard(pairing: PairingConfig, clearedClipboard: Boolean) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(painterResource(R.drawable.ic_check), null, tint = MaterialTheme.colorScheme.primary)
-                Text("Paired", style = MaterialTheme.typography.titleMedium)
+                // Only saved so far: the next step checks the iPhone actually has the same code.
+                Text("Pairing code saved", style = MaterialTheme.typography.titleMedium)
             }
-            Detail("Relay server", pairing.relayUrl)
+            Detail("Relay server", if (pairing.relayEnabled) pairing.relayUrl else "None (LAN/VPN only)")
             Detail("Access token", if (token != null && token.length > 4) "Set (…${token.takeLast(4)})" else "None")
             Detail("Direct LAN/VPN", pairing.lanEndpoint ?: "Not set")
             if (clearedClipboard) Text("Removed it from the clipboard.", style = MaterialTheme.typography.bodySmall,

@@ -148,7 +148,7 @@ fun MeTab(
             Triple("Rejected fixes",
                 if (status.rejectedCount == 0) "None" else "${status.rejectedCount} • last: ${status.lastRejectReason}",
                 R.drawable.ic_location_off),
-            Triple("Relay", state.pairing?.relayUrl ?: "Not paired", R.drawable.ic_dns),
+            Triple("Relay", state.pairing?.let { if (it.relayEnabled) it.relayUrl else "None (LAN/VPN only)" } ?: "Not paired", R.drawable.ic_dns),
         )
         itemsIndexed(rows, key = { _, r -> r.first }) { i, (title, value, icon) ->
             InfoItem(title, value, segmentedShapes(i, rows.size), icon)

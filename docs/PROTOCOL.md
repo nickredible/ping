@@ -17,7 +17,7 @@ fmb1:<relayUrl>:<channelId>:<base64Key>[?lan=<host:port>][&token=<accessToken>]
 
 | Part | Meaning |
 |---|---|
-| `relayUrl` | Base URL of the ntfy-compatible relay, no trailing slash (e.g. `https://ntfy.example.com`). Default `https://ntfy.sh`. |
+| `relayUrl` | Base URL of the ntfy-compatible relay, no trailing slash (e.g. `https://ntfy.example.com`). Default `https://ntfy.sh`. `none` means LAN/VPN only: there's no relay and `lan` is required. Older builds reject such codes. |
 | `channelId` | Random 96-bit ID as 24 hex characters. The topic names come from it. At least 16 characters. |
 | `base64Key` | The 256-bit AES-GCM key. Standard or URL-safe base64; padding optional. |
 | `lan` *(optional)* | `host:port` of the iPhone for a direct LAN/VPN link. Allowed characters: letters, digits, `. : - [ ]`. |
@@ -109,6 +109,10 @@ bridge is enabled.
 **`refresh_request`**: `type`, `seq`, `requestFriendsRefresh: true`, `sentTimeMs`. Asks the iPhone
 to push friends and fetch new ones, with no location.
 
+**`subscribe`**: `type`, `seq`, `sentTimeMs`. Only sent as the body of `POST /v1/stream` (see
+below), to prove the sender holds the key. Its `seq` must be within the 120 s window but doesn't
+count towards replay protection, so it can't race the uplinks sent at the same time.
+
 ### Downlink (iPhone → Android), topic `fmb-<channel>-down`
 
 Both downlink types share one shape:
@@ -159,11 +163,15 @@ Each entry in `friends`:
 ### Direct LAN/VPN (optional), served by the tweak on TCP 8765
 
 A minimal HTTP/1.1 server in SpringBoard, listening on all IPv4 interfaces. Requests are capped at
-64 KB, with 5-second read/write timeouts and `Connection: close`.
+64 KB, with 5-second read/write timeouts and `Connection: close`. Every downlink the iPhone sends
+goes to the open `/v1/stream` connections as well as to the relay. With a LAN/VPN-only code (relay
+`none`) there is no relay: Ping sends uplinks only to `/v1/sync` and receives downlinks only from
+`/v1/stream`, which it reopens with the same backoff as the relay stream.
 
 | Request | Who may call | Response |
 |---|---|---|
 | `POST /v1/sync` | Anyone, but it only acts on a valid, fresh uplink envelope | `200` with an encrypted `friends_state` envelope, or `401` |
+| `POST /v1/stream` | Anyone with a valid, fresh uplink envelope (a `subscribe`) | `200`, then held open: one encrypted downlink envelope per line, starting with the current `friends_state`, plus `{"event":"keepalive"}` every 45 s. `401` otherwise. At most 4 at once (the oldest is dropped), and all are closed when the pairing changes. |
 | `GET /v1/pairing` | **Loopback only** | `200 text/plain`: the current pairing code |
 | `POST /v1/pairing` | **Loopback only** | `200 {"ok":true,"paired":true}` or `400`. Replaces the config with the posted code. This resets **Enabled** and **Also Replace Device Location** to their defaults. |
 | anything else | Anyone | `200 {"ok":true,"service":"PingRelay","version":"…"}` health check |

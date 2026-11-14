@@ -215,6 +215,13 @@ int main(int argc, const char *argv[]) {
         NSString *injected = [full stringByAppendingString:@"%0d%0aX-Evil:1"];
         CHECK(fmbParsePairingCode(injected) == nil, "token with unsafe characters rejected");
         CHECK(fmbParsePairingCode(@"fmb1:https://ntfy.sh:short:AAAA") == nil, "short channel/key rejected");
+        NSString *lanOnly = fmbBuildPairingCode(kFMBNoRelay, channelId, keyB64, @"100.64.0.5:8765", nil);
+        NSDictionary *p3 = fmbParsePairingCode(lanOnly);
+        CHECK([p3[@"relayUrl"] isEqualToString:@"none"] && [p3[@"lanEndpoint"] isEqualToString:@"100.64.0.5:8765"] &&
+              !fmbRelayEnabled(p3[@"relayUrl"]), "LAN/VPN-only code parses");
+        CHECK(fmbParsePairingCode(fmbBuildPairingCode(kFMBNoRelay, channelId, keyB64, nil, nil)) == nil,
+              "LAN/VPN-only code without lan= rejected");
+        CHECK(fmbRelayEnabled(p2[@"relayUrl"]), "relay URL counts as relay enabled");
 
         printf("Replay protection\n");
         int64_t lastAccepted = 0;

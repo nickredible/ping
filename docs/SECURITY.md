@@ -60,7 +60,8 @@ What the safeguards cover and, more importantly, what they don't.
   third party. Self-host ntfy with a token to keep it in-house ([`RELAY.md`](RELAY.md)).
 - **The LAN server listens on every interface.** TCP 8765 is reachable by anything on the iPhone's
   networks, including VPNs. Without the key it can only fetch a health response with the tweak's
-  version, or make the iPhone try to decrypt garbage. Firewall it if that matters to you.
+  version, or make the iPhone try to decrypt garbage. `/v1/stream` only stays open for a request
+  that authenticates, and at most 4 at a time. Firewall it if that matters to you.
 - **Android allows cleartext HTTP app-wide.** The LAN link is plain HTTP, and Android can't scope
   cleartext to private addresses, so `cleartextTrafficPermitted` is on globally. Payloads are still
   encrypted, but an `http://` relay URL would expose the access token.

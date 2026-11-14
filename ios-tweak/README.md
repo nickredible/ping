@@ -101,10 +101,11 @@ refreshes every 3 s.
 - **Generate New 256-Bit Pairing Key**: new channel and key, keeping the relay and token.
 
 **Relay Settings**
-- **Internet Relay Server**: your ntfy URL. **Saving it generates a new channel and key**, so copy
-  the new code to Android afterwards.
+- **Internet Relay Server**: your ntfy URL, or **No Relay (LAN/VPN Only)** if both phones share a
+  VPN ([`../docs/RELAY.md`](../docs/RELAY.md#lanvpn-only-no-relay)). **Either one generates a new
+  channel and key**, so copy the new code to Android afterwards.
 - **Relay Access Token**: `tk_…` for a self-hosted ntfy with auth ([`../docs/RELAY.md`](../docs/RELAY.md)).
-  Keeps the channel and key; only the code's `token=` part changes.
+  Keeps the channel and key; only the code's `token=` part changes. Not used without a relay.
 - **Also Replace Device Location**: whether Find My iPhone and the offline-finding network also
   report the Android position (on by default). Off leaves them on the iPhone's real GPS; Share My
   Location still uses Android.

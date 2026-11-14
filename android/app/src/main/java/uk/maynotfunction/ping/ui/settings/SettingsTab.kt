@@ -142,17 +142,26 @@ fun SettingsTab(
             )
         }
         item(key = "relayUrl") {
-            ClickItem("Relay server", pairing?.relayUrl ?: "—", segmentedShapes(1, 4), R.drawable.ic_dns) {
+            ClickItem("Relay server", pairing?.let { if (it.relayEnabled) it.relayUrl else "None (LAN/VPN only)" } ?: "—",
+                segmentedShapes(1, 4), R.drawable.ic_dns) {
                 dialog = EditDialog.RelayUrl
             }
         }
         item(key = "token") {
             val t = pairing?.relayToken
-            ClickItem("Access token", if (t != null && t.length > 4) "Set (…${t.takeLast(4)})" else "None",
+            ClickItem("Access token", when {
+                    pairing?.relayEnabled == false -> "Not used without a relay"
+                    t != null && t.length > 4 -> "Set (…${t.takeLast(4)})"
+                    else -> "None"
+                },
                 segmentedShapes(2, 4), R.drawable.ic_password) { dialog = EditDialog.Token }
         }
         item(key = "lan") {
-            ClickItem("Direct LAN/VPN address", pairing?.lanEndpoint ?: "Not set (internet relay only)",
+            ClickItem("Direct LAN/VPN address", when {
+                    pairing?.lanEndpoint == null -> "Not set (internet relay only)"
+                    !pairing.relayEnabled -> "${pairing.lanEndpoint} (the only link, no relay)"
+                    else -> pairing.lanEndpoint
+                },
                 segmentedShapes(3, 4), R.drawable.ic_lan) { dialog = EditDialog.Lan }
         }
 
@@ -214,11 +223,16 @@ fun SettingsTab(
         )
         EditDialog.RelayUrl -> TextFieldDialog(
             title = "Relay server",
-            message = "ntfy-compatible HTTPS server. Set the same server on the iPhone.",
-            initial = pairing?.relayUrl.orEmpty(),
+            message = "ntfy-compatible HTTPS server. Set the same server on the iPhone. Enter \"none\" to skip the relay and use only the LAN/VPN address, if both phones share a network or VPN.",
+            initial = pairing?.takeIf { it.relayEnabled }?.relayUrl.orEmpty(),
             keyboardType = KeyboardType.Uri,
             onDismiss = { dialog = null },
-            onConfirm = { v -> vm.setRelayUrl(v) { ok -> if (!ok) showMessage("Enter an http(s) URL") }; dialog = null },
+            onConfirm = { v ->
+                vm.setRelayUrl(v) { ok ->
+                    if (!ok) showMessage(if (v.trim().equals("none", true)) "Set a LAN/VPN address first" else "Enter an http(s) URL or \"none\"")
+                }
+                dialog = null
+            },
             neutralLabel = "Use ntfy.sh",
             onNeutral = { vm.setRelayUrl("https://ntfy.sh") { }; dialog = null },
         )
@@ -240,7 +254,12 @@ fun SettingsTab(
             placeholder = "192.168.1.50:8765",
             keyboardType = KeyboardType.Uri,
             onDismiss = { dialog = null },
-            onConfirm = { v -> vm.setLanEndpoint(v) { ok -> if (!ok) showMessage("Use host:port") }; dialog = null },
+            onConfirm = { v ->
+                vm.setLanEndpoint(v) { ok ->
+                    if (!ok) showMessage(if (v.isBlank()) "Without a relay the LAN/VPN address is required" else "Use host:port")
+                }
+                dialog = null
+            },
         )
         EditDialog.Tiles -> TextFieldDialog(
             title = "Map tiles",

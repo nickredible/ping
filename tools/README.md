@@ -10,7 +10,8 @@ implementation it mirrors. It verifies:
   AAD);
 - `fmb1` envelope encryption, decryption and direction binding;
 - live-fix validation (rejects `isMock`, stale capture time, bad coordinates/accuracy);
-- pairing-code parsing, including `?lan=` / `&token=` and rejection of unsafe characters;
+- pairing-code parsing, including `?lan=` / `&token=`, LAN/VPN-only (`none`) codes and rejection of
+  unsafe characters;
 - replay protection (`seq` must increase and be recent).
 
 Build and run:

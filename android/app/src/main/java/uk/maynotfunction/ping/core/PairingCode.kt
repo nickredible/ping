@@ -6,6 +6,7 @@ import java.util.Base64
 /**
  * A parsed `fmb1` pairing code:
  * `fmb1:<relayUrl>:<channelId>:<base64Key>[?lan=<host:port>][&token=<relay access token>]`
+ * A relayUrl of `none` means LAN/VPN only: no relay, and a `lan` address is required.
  *
  * Wire-compatible with the iOS tweak (`ios-tweak/FMBShared.h`).
  */
@@ -19,6 +20,9 @@ class PairingConfig(
 ) {
     val keyBase64: String get() = Base64.getEncoder().encodeToString(key)
 
+    /** False for a LAN/VPN-only code: everything goes over [lanEndpoint]. */
+    val relayEnabled: Boolean get() = relayUrl != PairingCode.NO_RELAY
+
     fun withRelayUrl(url: String) = PairingCode.build(url, channelId, keyBase64, lanEndpoint, relayToken)
     fun withLanEndpoint(lan: String?) = PairingCode.build(relayUrl, channelId, keyBase64, lan, relayToken)
     fun withRelayToken(token: String?) = PairingCode.build(relayUrl, channelId, keyBase64, lanEndpoint, token)
@@ -26,6 +30,8 @@ class PairingConfig(
 
 object PairingCode {
     const val DEFAULT_RELAY = "https://ntfy.sh"
+    /** relayUrl of a LAN/VPN-only pairing code. */
+    const val NO_RELAY = "none"
     private val rng = SecureRandom()
 
     /** lan/token values end up in URLs and headers, so only conservative characters are allowed. */
@@ -79,7 +85,8 @@ object PairingCode {
 
         val normalized = keyB64.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }
         val key = runCatching { Base64.getDecoder().decode(normalized) }.getOrNull() ?: return null
-        if (key.size != 32 || channelId.length < 16 || relayUrl.length < 8) return null
+        if (key.size != 32 || channelId.length < 16) return null
+        if (if (relayUrl == NO_RELAY) lan == null else relayUrl.length < 8) return null
         return PairingConfig(relayUrl, channelId, key, lan, token, trimmed)
     }
 

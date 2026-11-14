@@ -9,7 +9,7 @@ see metadata.
 |---|---|---|---|---|
 | **Self-hosted ntfy + token** | A container and a reverse proxy | Only you | Yours to set | **Highly recommended** |
 | Public `ntfy.sh` | None (the default) | ntfy.sh's operator | Yes; anonymous clients hit 429s | Quick start only |
-| Direct LAN/VPN | An address in the pairing code | Nobody else | None | An add-on; still needs a relay |
+| Direct LAN/VPN | Both phones on one network or VPN | Nobody else | None | Works alone, or alongside a relay |
 
 ## 1. Self-hosted ntfy (recommended)
 
@@ -99,8 +99,25 @@ You can also set or clear it in Ping under **Settings → Direct LAN/VPN address
 Ping then POSTs each uplink straight to `http://<host:port>/v1/sync` and gets the friends list back
 in the response. If the iPhone can't be reached within 2.5 s, it falls back to the relay.
 
-The LAN link is plain HTTP, but the payloads are AES-GCM encrypted like everything else. **A relay
-is still required.** The iPhone uses it for every push it starts (friend updates and
-`locate_request`), because it can't open a connection to the Android phone.
+The LAN link is plain HTTP, but the payloads are AES-GCM encrypted like everything else.
+
+### LAN/VPN only (no relay)
+
+The iPhone can't open a connection to the Android phone, so with a relay its pushes (friend updates
+and `locate_request`) go through the relay. Without one, Ping holds a connection open to the iPhone
+instead (`POST /v1/stream`) and the iPhone writes its pushes down that.
+
+To use it, choose **No Relay (LAN/VPN Only)** under **Internet Relay Server** on the iPhone. That
+makes a new pairing code of the form `fmb1:none:<channel>:<key>?lan=<host:port>`. Copy it to Ping. In
+Ping you can also enter `none` as the relay server, if a LAN/VPN address is already set.
+
+This only makes sense with a VPN that both phones stay connected to, such as Tailscale (iOS 15 or
+later) or NetBird. The tweak puts the iPhone's `100.x` VPN address in the code if it has one, so set
+up the VPN on the iPhone before generating the code. When the phones can't reach each other, Ping
+can't share or receive anything. Find My keeps showing your last location until they reconnect.
+Android only runs one VPN at a time, so this rules out other VPN apps on the Android phone.
+
+On Android 17 and later, Ping needs the **local network** permission (shown as "nearby devices") for
+either form of the LAN link. Setup asks for it.
 
 See [`PROTOCOL.md`](PROTOCOL.md#endpoints) for the exact topics and endpoints.

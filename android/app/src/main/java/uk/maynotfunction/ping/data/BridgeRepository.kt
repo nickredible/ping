@@ -232,10 +232,15 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
         setPairingCode(PairingCode.generate(cur?.relayUrl, cur?.lanEndpoint, cur?.relayToken))
     }
 
+    /** An http(s) URL, or [PairingCode.NO_RELAY] for LAN/VPN only (which needs a LAN address). */
     suspend fun setRelayUrl(url: String): Boolean {
         val cleaned = url.trim().trimEnd('/')
-        if (!cleaned.startsWith("http")) return false
         val cur = awaitSettings().pairing ?: return false
+        if (cleaned.equals(PairingCode.NO_RELAY, ignoreCase = true)) {
+            if (cur.lanEndpoint == null) return false
+            return setPairingCode(cur.withRelayUrl(PairingCode.NO_RELAY))
+        }
+        if (!cleaned.startsWith("http")) return false
         return setPairingCode(cur.withRelayUrl(cleaned))
     }
 
@@ -243,6 +248,7 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
         val v = lan.trim()
         if (v.isNotEmpty() && !PairingCode.isSafeLan(v)) return false
         val cur = awaitSettings().pairing ?: return false
+        if (v.isEmpty() && !cur.relayEnabled) return false // LAN/VPN-only codes need the address
         return setPairingCode(cur.withLanEndpoint(v))
     }
 
