@@ -68,7 +68,7 @@ With a relay set, Ping still tries the LAN/VPN address first when it can reach i
 
 ### 2. Install the tweak
 
-**Pre-built:** download `com.findmy.livebridge_<version>_iphoneos-arm64.deb` from
+**Pre-built:** download `uk.maynotfunction.pingrelay_<version>_iphoneos-arm64.deb` from
 [Releases](https://github.com/nickredible/ping/releases).
 
 **Or build it** on a Mac with Xcode command-line tools: `cd ios-tweak && python3 build_deb.py`
@@ -77,11 +77,11 @@ With a relay set, Ping still tries the LAN/VPN address first when it can reach i
 Install it as root, then respring:
 
 ```bash
-scp com.findmy.livebridge_*_iphoneos-arm64.deb root@<iphone>:/tmp/
+scp uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb root@<iphone>:/tmp/
 ```
 
 ```bash
-ssh root@<iphone> 'dpkg -i /tmp/com.findmy.livebridge_*_iphoneos-arm64.deb'
+ssh root@<iphone> 'dpkg -i /tmp/uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb'
 ```
 
 More detail: [`ios-tweak/README.md`](ios-tweak/README.md).
@@ -139,7 +139,10 @@ launchctl load -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plis
 
 ## Good to know
 
-- Sharing runs as a foreground service. After a reboot, open Ping once to start it again.
+- Sharing runs as a foreground service. It restarts by itself after a reboot if location is allowed
+  **all the time** (setup asks, or **Settings → Restart after reboot**); otherwise open Ping once.
+- If the relay iPhone stops answering for 30 minutes (off, offline, or the jailbreak lost after a
+  restart), Ping notifies you.
 - When you're still, Ping goes near-idle and sends heartbeats. If it stops reporting (no signal, phone
   off), Find My keeps showing its last position until it reports again, instead of jumping to the iPhone.
 - Anyone holding the pairing code can set your Find My location. If it leaks, generate a new key and
@@ -151,6 +154,7 @@ launchctl load -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plis
 | `Relay rate limit (429)` in Ping | Self-host ntfy |
 | No friends in Ping | Open Find My → People on the iPhone once, then refresh in Ping |
 | Me tab says *Not set as the My Location device* | Use This iPhone as My Location (step 3) |
+| *Relay iPhone isn't responding* notification | Check the iPhone is on and online. If it restarted, re-jailbreak it with Dopamine |
 | OpenBubbles keeps logging out (6005) | Step 6 |
 
 ## Docs

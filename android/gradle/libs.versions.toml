@@ -9,6 +9,8 @@ material3 = "1.5.0-rc01"
 datastore = "1.3.0"
 coroutines = "1.11.0"
 mapsCompose = "9.0.1"
+junit = "4.13.2"
+orgJson = "20250517"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -25,6 +27,9 @@ androidx-compose-material3 = { module = "androidx.compose.material3:material3", 
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 maps-compose = { module = "com.google.maps.android:maps-compose", version.ref = "mapsCompose" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+# JVM unit tests. org.json replaces the android.jar stub, whose methods all throw off-device.
+junit = { module = "junit:junit", version.ref = "junit" }
+org-json = { module = "org.json:json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

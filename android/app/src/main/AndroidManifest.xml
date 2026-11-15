@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Setup's one-tap "Unrestricted" battery prompt. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Restarts sharing after a reboot or an update. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".BridgeApplication"
@@ -47,5 +49,14 @@
             android:name=".service.LocationService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

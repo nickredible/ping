@@ -6,6 +6,8 @@
 // 3. Live-fix validation (rejects isMock, stale capture time, bad coordinates/accuracy)
 // 4. Pairing-code parsing, including ?lan= / &token= and unsafe-character rejection
 // 5. Replay protection (seq must increase and be recent)
+// 6. The shared vectors in vectors/fmb1.json, which the Android unit tests check too: pairing codes
+//    both sides must agree on, and envelopes encrypted by each side
 // Optional: `--simulate-relay <fmb1_pairing_code>` reads the Android phone's uplink from the
 // relay, checks it like the tweak would, and publishes an encrypted friends_state downlink.
 //
@@ -117,6 +119,67 @@ static int simulateRelay(NSString *code) {
     }] resume];
     dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)));
     return 0;
+}
+
+// Same check as Android's Vectors.sameJson: values equal, key order and 8 vs 8.0 ignored.
+static BOOL sameJson(id a, id b) {
+    if ([a isKindOfClass:[NSNumber class]] && [b isKindOfClass:[NSNumber class]]) return [a doubleValue] == [b doubleValue];
+    return [a isEqual:b];
+}
+
+static void checkSharedVectors(void) {
+    NSString *path = [[[NSString stringWithUTF8String:__FILE__] stringByDeletingLastPathComponent]
+                      stringByAppendingPathComponent:@"vectors/fmb1.json"];
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    NSDictionary *v = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    CHECK(v != nil, "shared vectors load (vectors/fmb1.json)");
+    if (!v) return;
+    NSString *channel = v[@"channelId"], *keyB64 = v[@"keyBase64"];
+
+    int bad = 0;
+    for (NSDictionary *c in v[@"pairing"][@"valid"]) {
+        NSDictionary *cfg = fmbParsePairingCode(c[@"code"]);
+        id lan = c[@"lan"] == [NSNull null] ? nil : c[@"lan"], token = c[@"token"] == [NSNull null] ? nil : c[@"token"];
+        BOOL ok = cfg && [cfg[@"relayUrl"] isEqualToString:c[@"relayUrl"]] && [cfg[@"channelId"] isEqualToString:channel] &&
+            [cfg[@"keyBase64"] isEqualToString:keyB64] &&
+            (lan ? [cfg[@"lanEndpoint"] isEqualToString:lan] : cfg[@"lanEndpoint"] == nil) &&
+            (token ? [cfg[@"relayToken"] isEqualToString:token] : cfg[@"relayToken"] == nil);
+        if (!ok) { printf("        mismatch: %s\n", [c[@"code"] UTF8String]); bad++; }
+    }
+    CHECK(bad == 0, "shared valid pairing codes parse to the same fields");
+    bad = 0;
+    for (NSString *code in v[@"pairing"][@"invalid"]) {
+        if (fmbParsePairingCode(code)) { printf("        accepted: %s\n", code.UTF8String); bad++; }
+    }
+    CHECK(bad == 0, "shared invalid pairing codes are rejected");
+
+    NSData *key = [[NSData alloc] initWithBase64EncodedString:keyB64 options:0];
+    NSMutableSet *seen = [NSMutableSet set];
+    bad = 0;
+    for (NSDictionary *e in v[@"envelopes"]) {
+        NSString *dir = e[@"payload"];
+        NSDictionary *payload = decryptEnvelopeJson(e[@"envelope"], dir, channel, key);
+        NSDictionary *expected = v[@"payloads"][dir];
+        BOOL ok = payload && payload.count == expected.count;
+        for (NSString *k in expected) {
+            if (!ok) break;
+            id a = payload[k], b = expected[k];
+            if ([b isKindOfClass:[NSArray class]]) {
+                NSArray *fa = a, *fb = b;
+                ok = [fa isKindOfClass:[NSArray class]] && fa.count == fb.count;
+                for (NSUInteger i = 0; ok && i < fb.count; i++) {
+                    NSDictionary *da = fa[i], *db = fb[i];
+                    ok = da.count == db.count;
+                    for (NSString *fk in db) if (ok) ok = sameJson(da[fk], db[fk]);
+                }
+            } else ok = sameJson(a, b);
+        }
+        // The same envelope must not open in the other direction.
+        if (ok) ok = decryptEnvelopeJson(e[@"envelope"], [dir isEqualToString:@"up"] ? @"down" : @"up", channel, key) == nil;
+        if (!ok) { printf("        failed: %s %s\n", [e[@"from"] UTF8String], dir.UTF8String); bad++; }
+        [seen addObject:[NSString stringWithFormat:@"%@ %@", e[@"from"], dir]];
+    }
+    CHECK(bad == 0 && seen.count == 4, "envelopes from both sides decrypt to the shared payloads");
 }
 
 int main(int argc, const char *argv[]) {
@@ -238,6 +301,9 @@ int main(int argc, const char *argv[]) {
         int64_t senderSeq = 0;
         int64_t s1 = fmbNextSeq(&senderSeq), s2 = fmbNextSeq(&senderSeq), s3 = fmbNextSeq(&senderSeq);
         CHECK(s1 < s2 && s2 < s3, "sender seq strictly increases within the same millisecond");
+
+        printf("Shared vectors (also checked by the Android unit tests)\n");
+        checkSharedVectors();
 
         if (gFailures > 0) {
             printf("[FAIL] %d check(s) failed.\n", gFailures);

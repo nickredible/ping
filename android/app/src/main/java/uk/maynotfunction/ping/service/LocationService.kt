@@ -25,6 +25,7 @@ import uk.maynotfunction.ping.R
 import uk.maynotfunction.ping.bridgeApp
 import uk.maynotfunction.ping.core.Cadence
 import uk.maynotfunction.ping.core.LocationValidator
+import uk.maynotfunction.ping.core.RelayWatchdog
 import uk.maynotfunction.ping.ui.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,6 +63,8 @@ class LocationService : LifecycleService() {
 
         private const val CHANNEL_ID = "location_sharing"
         private const val NOTIFICATION_ID = 4201
+        private const val ALERT_CHANNEL_ID = "relay_alerts"
+        private const val QUIET_NOTIFICATION_ID = 4202
         private const val MIN_UPLOAD_INTERVAL_MS = 10_000L
         private const val DEDUPE_WINDOW_MS = 3_000L
         /** Uploads only ask the iPhone to re-send friends this often, unless explicitly requested. */
@@ -101,6 +104,7 @@ class LocationService : LifecycleService() {
     private var lastUploadMs = 0L
     private var lastFriendsRequestMs = 0L
     private var friendsRequestPending = false
+    private var quietAlertShown = false
 
     private val listener = LocationListener { handleFix(it, force = false) }
 
@@ -122,11 +126,14 @@ class LocationService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         locationManager = getSystemService(LocationManager::class.java)
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
+        getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(
             NotificationChannel(CHANNEL_ID, "Live location sharing", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Shown while your location is shared with your relay iPhone."
-            }
-        )
+            },
+            NotificationChannel(ALERT_CHANNEL_ID, "Relay iPhone alerts", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Tells you when the relay iPhone stops responding."
+            },
+        ))
         // Only redraw the notification when what it shows changes (not on every fix).
         lifecycleScope.launch {
             repo.status.map { notificationText(it.lastError, it.lastUploadMs, it.lastTransport) to it.lastUploadMs }
@@ -134,6 +141,10 @@ class LocationService : LifecycleService() {
                 .collect {
                     if (running) getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
                 }
+        }
+        // Clears the quiet-iPhone alert as soon as a reply arrives.
+        lifecycleScope.launch {
+            repo.status.map { it.unansweredSinceMs }.distinctUntilChanged().collect { checkRelayQuiet() }
         }
     }
 
@@ -156,6 +167,7 @@ class LocationService : LifecycleService() {
         if (!running) {
             running = true
             lastMovementMs = System.currentTimeMillis()
+            repo.clearUnansweredRequests()
             // Re-plan the location request whenever the UI shows/hides or the cadence changes.
             modeJob = lifecycleScope.launch {
                 combine(repo.uiVisible, repo.settings.map { it.cadence }.distinctUntilChanged()) { v, c -> v to c }
@@ -195,6 +207,7 @@ class LocationService : LifecycleService() {
         heartbeatJob?.cancel()
         modeJob?.cancel()
         removeLocationRequests()
+        cancelQuietAlert()
         repo.setLocationMode("Off")
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -320,6 +333,7 @@ class LocationService : LifecycleService() {
     private suspend fun heartbeatLoop() {
         while (lifecycleScope.isActive) {
             checkStationary()
+            checkRelayQuiet()
             val settings = repo.settings.value
             val due = settings.cadence.heartbeatMs - (System.currentTimeMillis() - lastUploadMs)
             if (due <= 0) {
@@ -396,6 +410,44 @@ class LocationService : LifecycleService() {
                 repo.setSyncing(false)
             }
         }
+    }
+
+    // ---- Quiet relay iPhone --------------------------------------------------------------------
+
+    /** Raises (once) or clears the alert for a relay iPhone that has stopped answering. */
+    private fun checkRelayQuiet() {
+        if (!running) return
+        val quiet = RelayWatchdog.isQuiet(repo.status.value.unansweredSinceMs, System.currentTimeMillis())
+        if (quiet && !quietAlertShown) {
+            quietAlertShown = true
+            repo.log("Relay iPhone hasn't answered in ${RelayWatchdog.QUIET_AFTER_MS / 60_000} min")
+            getSystemService(NotificationManager::class.java).notify(QUIET_NOTIFICATION_ID, buildQuietNotification())
+        } else if (!quiet && quietAlertShown) {
+            repo.log("Relay iPhone is answering again")
+            cancelQuietAlert()
+        }
+    }
+
+    private fun cancelQuietAlert() {
+        quietAlertShown = false
+        getSystemService(NotificationManager::class.java).cancel(QUIET_NOTIFICATION_ID)
+    }
+
+    private fun buildQuietNotification(): Notification {
+        val open = PendingIntent.getActivity(this, 3, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val text = "Ping hasn't heard from it in ${RelayWatchdog.QUIET_AFTER_MS / 60_000} minutes. " +
+            "Check that it's on, online and still jailbroken."
+        return Notification.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_share_location)
+            .setContentTitle("Relay iPhone isn't responding")
+            .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(true)
+            .build()
     }
 
     // ---- Notification --------------------------------------------------------------------------

@@ -1,5 +1,8 @@
 package uk.maynotfunction.ping.ui.components
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.icu.text.NumberFormat
 import android.icu.util.LocaleData
@@ -105,4 +108,10 @@ fun distanceLabel(meters: Float): String {
         value < 0.95f -> "${String.format(locale, "%.1f", value)} $unit"
         else -> "${NumberFormat.getIntegerInstance(locale).format(value.roundToInt())} $unit"
     }
+}
+
+tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

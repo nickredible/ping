@@ -16,6 +16,7 @@ app/src/main/java/uk/maynotfunction/ping/
 │   ├── PairingCode.kt       fmb1:<relay>:<channel>:<key>[?lan=…][&token=…] parse / build / generate
 │   ├── Envelope.kt          AES-256-GCM envelope (javax.crypto) + SeqGuard replay protection
 │   ├── LocationValidator.kt Rejects mock, stale (>120 s) and inaccurate (>1500 m) fixes
+│   ├── RelayWatchdog.kt     When the relay iPhone counts as quiet (an unanswered request, 30 min)
 │   └── Models.kt            FriendLocation, MyFix, Cadence, LogLine
 ├── data/
 │   ├── BridgeRepository.kt  DataStore settings; StateFlows for this phone's fix, relay status,
@@ -23,8 +24,10 @@ app/src/main/java/uk/maynotfunction/ping/
 │   ├── RelayClient.kt       Uplink over the ntfy relay or direct LAN/VPN; streaming downlink
 │   │                        subscription with backoff
 │   └── ContactsRepository.kt  Contacts lookups (PhoneLookup / e-mail) for friends' names and photos
-├── service/LocationService.kt  Foreground location service: adaptive location requests, uploads on
-│                               movement / heartbeat / request, owns the downlink stream
+├── service/
+│   ├── LocationService.kt   Foreground location service: adaptive location requests, uploads on
+│   │                        movement / heartbeat / request, owns the downlink stream
+│   └── BootReceiver.kt      Restarts sharing after a reboot or an update
 └── ui/
     ├── MainActivity.kt, MainViewModel.kt, BridgeScreen.kt  Scaffold, tabs, toolbar, permissions
     ├── friends/ me/ settings/  The three tabs
@@ -56,8 +59,16 @@ Fonts under the SIL OFL 1.1 (`app/src/main/assets/licenses/`).
 
 - **The `LocationService` foreground service** does the work while sharing is on: location, uploads
   and the downlink stream. It shows an ongoing notification with **Sync now** and **Stop sharing**.
-  It starts when the app opens with location permission, so **after a reboot, open Ping once**.
-  There's no boot receiver, and Ping doesn't ask for background location.
+  It starts when the app opens with location permission.
+- **After a reboot or an update**, `BootReceiver` starts sharing again if it was on and setup is
+  done. Android only lets it start a location service from the background with location allowed
+  **all the time**, which setup's last step and **Settings → Restart after reboot** ask for. Without
+  it, open Ping once.
+- **A quiet relay iPhone** raises a notification on its own channel (*Relay iPhone alerts*). Every
+  request for friends gets a reply, so if one reached the relay and nothing has come back for 30
+  minutes, the iPhone is off, offline or no longer jailbroken. Requests that never left this phone
+  don't count, so being offline doesn't trigger it. In LAN/VPN-only mode, an unanswered LAN request
+  with a network up counts. The alert clears itself when the iPhone answers again.
 - **With sharing paused**, the app still streams friend updates, but only while it's on screen.
 - **The downlink** is one long-lived streaming connection to `<relay>/fmb-<channel>-down/json` with a
   100 s read timeout (ntfy keepalives arrive every ~45 s). It reconnects with exponential backoff (5 s
@@ -161,6 +172,17 @@ to it:
 ```bash
 ./gradlew :app:assembleDebug -Pping.appIdSuffix=.test
 ```
+
+## Tests
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+JVM unit tests for `core/`: pairing codes, envelopes, replay protection and the quiet-iPhone
+watchdog. Pairing codes and envelopes are also checked against
+[`tools/vectors/fmb1.json`](../tools/vectors/fmb1.json), which the iOS side's test tool reads too,
+so the two implementations can't drift apart unnoticed.
 
 ## Scripting
 

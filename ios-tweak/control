@@ -1,4 +1,4 @@
-Package: com.findmy.livebridge
+Package: uk.maynotfunction.pingrelay
 Name: Ping Relay
 Version: 1.5.0
 Architecture: iphoneos-arm64
@@ -7,3 +7,5 @@ Maintainer: Nick
 Author: Nick
 Section: Tweaks
 Depends: firmware (>= 15.0), mobilesubstrate | org.coolstar.libhooker | ellekit, preferenceloader
+Conflicts: com.findmy.livebridge
+Replaces: com.findmy.livebridge

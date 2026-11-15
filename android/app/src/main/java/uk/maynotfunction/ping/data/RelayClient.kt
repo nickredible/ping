@@ -2,6 +2,7 @@ package uk.maynotfunction.ping.data
 
 import android.content.Context
 import android.location.Location
+import android.net.ConnectivityManager
 import android.os.BatteryManager
 import uk.maynotfunction.ping.core.Envelope
 import uk.maynotfunction.ping.core.PairingConfig
@@ -140,7 +141,10 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
     private suspend fun sendUp(cfg: PairingConfig, payload: JSONObject, recordResult: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             val envelope = Envelope.encrypt(payload, Envelope.UP, cfg)
+            val sentAt = System.currentTimeMillis()
+            val asksForFriends = payload.optBoolean("requestFriendsRefresh")
             cfg.lanEndpoint?.let { lan ->
+                // A LAN/VPN reply carries the friends, so there's nothing left unanswered.
                 if (tryLanSync(cfg, lan, envelope)) {
                     if (recordResult) repo.recordUploadSuccess("LAN/VPN")
                     return@withContext true
@@ -148,6 +152,8 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
             }
 
             if (!cfg.relayEnabled) {
+                // LAN/VPN only: with a network up, an iPhone that doesn't answer is the quiet one.
+                if (asksForFriends && hasNetwork()) repo.recordFriendsRequest(sentAt)
                 if (recordResult) repo.recordUploadFailure(
                     cfg.lanEndpoint?.let { "Relay iPhone not reachable at $it" } ?: "No LAN/VPN address set")
                 return@withContext false
@@ -167,6 +173,7 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
             }
             when {
                 result.code in 200..299 -> {
+                    if (asksForFriends) repo.recordFriendsRequest(sentAt)
                     if (recordResult) repo.recordUploadSuccess("internet relay")
                     true
                 }
@@ -359,6 +366,9 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
         val error = text?.let { runCatching { JSONObject(it).optString("error") }.getOrNull()?.ifBlank { null } ?: it.take(120) }
         return HttpResult(code, retryAfter, error)
     }
+
+    private fun hasNetwork(): Boolean =
+        appContext.getSystemService(ConnectivityManager::class.java)?.activeNetwork != null
 
     private fun batteryPercent(): Int =
         appContext.getSystemService(BatteryManager::class.java)

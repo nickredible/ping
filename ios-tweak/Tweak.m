@@ -23,24 +23,24 @@
 
 #pragma mark - Constants & Paths
 
-static NSString *const kConfigPathRootless  = @"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.config.json";
-static NSString *const kPairingTxtRootless  = @"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.pairing.txt";
-static NSString *const kStatePathRootless   = @"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.state.json";
-static NSString *const kFriendsPathRootless = @"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.friends.json";
+static NSString *const kConfigPathRootless  = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.config.json";
+static NSString *const kPairingTxtRootless  = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.pairing.txt";
+static NSString *const kStatePathRootless   = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.state.json";
+static NSString *const kFriendsPathRootless = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.friends.json";
 
-static NSString *const kConfigPathFallback  = @"/var/mobile/Library/Preferences/com.findmy.livebridge.config.json";
-static NSString *const kPairingTxtFallback  = @"/var/mobile/Library/Preferences/com.findmy.livebridge.pairing.txt";
-static NSString *const kStatePathFallback   = @"/var/mobile/Library/Preferences/com.findmy.livebridge.state.json";
-static NSString *const kFriendsPathFallback = @"/var/mobile/Library/Preferences/com.findmy.livebridge.friends.json";
+static NSString *const kConfigPathFallback  = @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.config.json";
+static NSString *const kPairingTxtFallback  = @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.pairing.txt";
+static NSString *const kStatePathFallback   = @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.state.json";
+static NSString *const kFriendsPathFallback = @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.friends.json";
 // findMyId -> {handle, name}, from the friends list in fmfmobile initClient replies.
-static NSString *const kFriendMetaPathRootless = @"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.friendmeta.json";
-static NSString *const kFriendMetaPathFallback = @"/var/mobile/Library/Preferences/com.findmy.livebridge.friendmeta.json";
+static NSString *const kFriendMetaPathRootless = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.friendmeta.json";
+static NSString *const kFriendMetaPathFallback = @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.friendmeta.json";
 
-static const char *kNotifyLocationUpdated       = "com.findmy.livebridge.location_updated";
-static const char *kNotifyFriendsUpdated        = "com.findmy.livebridge.friends_updated";
-static const char *kNotifyLocateNeeded          = "com.findmy.livebridge.locate_needed";
-static const char *kNotifyRequestFriendsRefresh = "com.findmy.livebridge.request_friends_refresh";
-static const char *kNotifyConfigChanged         = "com.findmy.livebridge.config_changed";
+static const char *kNotifyLocationUpdated       = "uk.maynotfunction.pingrelay.location_updated";
+static const char *kNotifyFriendsUpdated        = "uk.maynotfunction.pingrelay.friends_updated";
+static const char *kNotifyLocateNeeded          = "uk.maynotfunction.pingrelay.locate_needed";
+static const char *kNotifyRequestFriendsRefresh = "uk.maynotfunction.pingrelay.request_friends_refresh";
+static const char *kNotifyConfigChanged         = "uk.maynotfunction.pingrelay.config_changed";
 
 static const uint16_t kDefaultHttpPort = 8765;
 
@@ -541,7 +541,7 @@ static bool validateAndStoreIncomingFix(NSDictionary *payload, NSString **reason
             regenerateBridgeConfig(cfg, nil, cfg[@"relayToken"]);
             [self.tableView reloadData];
             [self showToastAlert:@"Generated New Key"
-                         message:@"Created a fresh 256-bit AES-GCM pairing code and copied it to /var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.pairing.txt."];
+                         message:@"Created a fresh 256-bit AES-GCM pairing code and copied it to /var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.pairing.txt."];
         }
     } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
@@ -1124,19 +1124,19 @@ static void extractAndStoreFriendsFromFMFJson(NSDictionary *json) {
 }
 
 // Debug capture, off unless this flag file exists (touch it over SSH, delete it when done):
-//   /var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug
+//   /var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug
 // Logs every Find My-related request (process, path, status, size) to fmf-requests.log and
-// keeps the latest body of each friends reply, in .../com.findmy.livebridge.debug.d/.
+// keeps the latest body of each friends reply, in .../uk.maynotfunction.pingrelay.debug.d/.
 static BOOL fmbDebugEnabled(void) {
     return [[NSFileManager defaultManager] fileExistsAtPath:
-            resolvePath(@"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug",
-                        @"/var/mobile/Library/Preferences/com.findmy.livebridge.debug")];
+            resolvePath(@"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug",
+                        @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug")];
 }
 
 static void fmbDebugRecord(NSURLRequest *request, NSData *data, NSURLResponse *response, NSError *error, BOOL saveBody) {
     if (!fmbDebugEnabled()) return;
-    NSString *dir = resolvePath(@"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d",
-                                @"/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d");
+    NSString *dir = resolvePath(@"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d",
+                                @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d");
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *proc = [NSString stringWithUTF8String:getprogname() ?: "?"];
     NSURL *url = request.URL;
@@ -1198,8 +1198,8 @@ static void fmbDumpClasses(void) {
                 }
             }
             free(classes);
-            NSString *dir = resolvePath(@"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d",
-                                        @"/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d");
+            NSString *dir = resolvePath(@"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d",
+                                        @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d");
             [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
             NSString *path = [dir stringByAppendingPathComponent:
                               [NSString stringWithFormat:@"%s-classes.txt", getprogname() ?: "unknown"]];
@@ -1210,8 +1210,8 @@ static void fmbDumpClasses(void) {
 
 static void fmbDebugLog(NSString *msg) {
     if (!fmbDebugEnabled()) return;
-    NSString *dir = resolvePath(@"/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d",
-                                @"/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d");
+    NSString *dir = resolvePath(@"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d",
+                                @"/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d");
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *path = [dir stringByAppendingPathComponent:@"fmf-locations.log"];
     NSString *line = [NSString stringWithFormat:@"%lld %s %@\n", currentEpochMs(), getprogname() ?: "?", msg];
@@ -1484,7 +1484,7 @@ static void lanDropAllSubscribers(void) {
 
 static void startLanStreamHub(void) {
     gLanSubscribers = [NSMutableArray array];
-    gLanQueue = dispatch_queue_create("com.findmy.livebridge.lanstream", DISPATCH_QUEUE_SERIAL);
+    gLanQueue = dispatch_queue_create("uk.maynotfunction.pingrelay.lanstream", DISPATCH_QUEUE_SERIAL);
     gLanKeepaliveTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gLanQueue);
     dispatch_source_set_timer(gLanKeepaliveTimer, dispatch_time(DISPATCH_TIME_NOW, kLanKeepaliveSec * NSEC_PER_SEC),
                               kLanKeepaliveSec * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
@@ -1725,7 +1725,7 @@ static void startInternetRelayStream(void) {
         lanDropAllSubscribers();
     });
 
-    dispatch_queue_t q = dispatch_queue_create("com.findmy.livebridge.relaystream", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_t q = dispatch_queue_create("uk.maynotfunction.pingrelay.relaystream", DISPATCH_QUEUE_SERIAL);
     dispatch_async(q, ^{
         double backoff = 5.0;
         while (true) {
@@ -1821,7 +1821,7 @@ static void sendAll(int fd, NSData *data) {
 }
 
 static void startLocalHttpServer(void) {
-    dispatch_queue_t serverQueue = dispatch_queue_create("com.findmy.livebridge.http", DISPATCH_QUEUE_CONCURRENT);
+    dispatch_queue_t serverQueue = dispatch_queue_create("uk.maynotfunction.pingrelay.http", DISPATCH_QUEUE_CONCURRENT);
     dispatch_async(serverQueue, ^{
         int serverFd = socket(AF_INET, SOCK_STREAM, 0);
         if (serverFd < 0) return;
@@ -1940,7 +1940,7 @@ static void initSpringBoardHub(void) {
 #pragma mark - Tweak Constructor (%ctor)
 
 __attribute__((constructor))
-static void FindMyLiveBridgeInit(void) {
+static void PingRelayInit(void) {
     @autoreleasepool {
         const char *prog = getprogname();
         if (!prog) return;

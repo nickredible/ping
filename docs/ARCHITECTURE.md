@@ -44,7 +44,7 @@ and takes on a different role in each process:
 | **`searchpartyd`** | Captures friends (it decrypts secure locations). Injects the fix only when **Also Replace Device Location** is on. |
 | **Preferences** | Hosts the settings pane through PreferenceLoader. The same dylib is installed as the preference bundle. |
 
-[`FindMyLiveBridge.plist`](../ios-tweak/FindMyLiveBridge.plist) also lists the legacy Find My Friends
+[`PingRelay.plist`](../ios-tweak/PingRelay.plist) also lists the legacy Find My Friends
 bundle (`com.apple.mobileme.fmf1`); the constructor does nothing there.
 
 ### How the processes talk on the iPhone
@@ -52,7 +52,7 @@ bundle (`com.apple.mobileme.fmf1`); the constructor does nothing there.
 The processes don't share memory. They coordinate through JSON files in the jailbreak's preferences
 folder and Darwin notifications (`notify_post`):
 
-| Notification (`com.findmy.livebridge.…`) | Posted by | Handled by |
+| Notification (`uk.maynotfunction.pingrelay.…`) | Posted by | Handled by |
 |---|---|---|
 | `location_updated` | Hub after storing a fix; settings pane | Find My processes re-deliver the fix to active `CLLocationManager` delegates |
 | `friends_updated` | Any process after `friends.json` changes; settings pane | Hub publishes `friends_state` (unchanged lists at most every 5 min) |
@@ -151,7 +151,7 @@ My → People on the iPhone once, or the fetch has no IDs to ask for.
 Everything is under `/var/jb/var/mobile/Library/Preferences/` (rootless), or the same path without
 `/var/jb` if that folder doesn't exist:
 
-| File (`com.findmy.livebridge.…`) | Contents |
+| File (`uk.maynotfunction.pingrelay.…`) | Contents |
 |---|---|
 | `config.json` | `enabled`, `hookDeviceLocation`, `relayUrl`, `relayToken`, `channelId`, `keyBase64`, `lanEndpoint`, `pairingCode`. Created with a fresh key on first run. |
 | `pairing.txt` | The current pairing code on its own |

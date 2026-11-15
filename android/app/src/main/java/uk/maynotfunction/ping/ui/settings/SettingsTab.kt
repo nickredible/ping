@@ -1,8 +1,15 @@
 package uk.maynotfunction.ping.ui.settings
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipDescription
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.PersistableBundle
+import android.provider.Settings as AndroidSettings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,6 +48,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import uk.maynotfunction.ping.R
 import uk.maynotfunction.ping.core.Cadence
 import uk.maynotfunction.ping.core.LogLine
@@ -54,6 +63,7 @@ import uk.maynotfunction.ping.ui.UiState
 import uk.maynotfunction.ping.ui.components.ClickItem
 import uk.maynotfunction.ping.ui.components.ConnectedChoice
 import uk.maynotfunction.ping.ui.components.ItemIcon
+import uk.maynotfunction.ping.ui.components.findActivity
 import uk.maynotfunction.ping.ui.components.SwitchItem
 import uk.maynotfunction.ping.ui.components.TextFieldDialog
 import uk.maynotfunction.ping.ui.components.itemContainerColor
@@ -85,6 +95,29 @@ fun SettingsTab(
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
+    // "Allow all the time" lets sharing restart after a reboot. Re-read on resume: it's changed in Settings.
+    var permissionTick by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        permissionTick++
+        onPauseOrDispose { }
+    }
+    val allTheTime = remember(permissionTick) {
+        context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+    val hasLocation = remember(permissionTick) {
+        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+    fun openAppSettings() = context.startActivity(
+        Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+    // Android stops showing the prompt after it's been refused; the setting is then only in Settings.
+    var backgroundBlocked by rememberSaveable { mutableStateOf(false) }
+    val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionTick++
+        if (!granted && context.findActivity()?.shouldShowRequestPermissionRationale(
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION) == false) backgroundBlocked = true
+    }
+
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -105,7 +138,7 @@ fun SettingsTab(
                     Cadence.Saver -> "Every 100 m of movement, at least every 10 min"
                 },
                 icon = R.drawable.ic_speed,
-                index = 0, count = 2,
+                index = 0, count = 3,
             ) {
                 ConnectedChoice(Cadence.entries, settings.cadence, { it.label }, vm::setCadence)
             }
@@ -116,8 +149,20 @@ fun SettingsTab(
                     if (on && !hasContactsPermission) requestContactsPermission()
                     vm.setContactsMatching(on)
                 },
-                segmentedShapes(1, 2), R.drawable.ic_contacts,
+                segmentedShapes(1, 3), R.drawable.ic_contacts,
                 if (!hasContactsPermission) "Needs contacts permission" else null)
+        }
+        item(key = "restart") {
+            // Android can't revoke a permission from inside the app, so turning it off opens Settings.
+            SwitchItem("Restart after reboot", allTheTime,
+                { on ->
+                    when {
+                        !on || !hasLocation || backgroundBlocked -> openAppSettings()
+                        else -> backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
+                },
+                segmentedShapes(2, 3), R.drawable.ic_autorenew,
+                if (allTheTime) "Location is allowed all the time" else "Needs location \"Allow all the time\"")
         }
 
         sectionHeader("Relay")

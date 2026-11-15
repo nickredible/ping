@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -75,6 +74,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import uk.maynotfunction.ping.R
+import uk.maynotfunction.ping.ui.components.findActivity
 import uk.maynotfunction.ping.core.PairingCode
 import uk.maynotfunction.ping.core.PairingConfig
 import uk.maynotfunction.ping.data.RelayClient.CheckResult
@@ -458,24 +458,45 @@ private fun CheckStep(pairing: PairingConfig?, vm: MainViewModel) {
 @Composable
 private fun BatteryStep(refreshTick: Int) {
     val context = LocalContext.current
-    val unrestricted = remember(refreshTick) {
+    var tick by remember { mutableIntStateOf(0) }
+    val unrestricted = remember(refreshTick, tick) {
         context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+    }
+    val location = remember(refreshTick, tick) { context.hasLocation() }
+    val allTheTime = remember(refreshTick, tick) { context.granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+    // Android shows this prompt at most once or twice; after that it's only in Settings.
+    var backgroundBlocked by rememberSaveable { mutableStateOf(false) }
+    val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted && context.findActivity()?.shouldShowRequestPermissionRationale(
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION) == false) backgroundBlocked = true
+        tick++
     }
 
     StepHeader(R.drawable.ic_battery, "Keep it running",
         "Android can stop apps in the background to save power. Set Ping's battery usage to Unrestricted so " +
             "sharing keeps going.")
-    PermissionRow(R.drawable.ic_battery, "Battery usage",
-        if (unrestricted) "Unrestricted" else "Optimised: Android may pause sharing",
-        unrestricted, blocked = false, index = 0, count = 1) {
-        val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
-        runCatching { context.startActivity(request) }.onFailure {
-            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.fromParts("package", context.packageName, null)))
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        PermissionRow(R.drawable.ic_battery, "Battery usage",
+            if (unrestricted) "Unrestricted" else "Optimised: Android may pause sharing",
+            unrestricted, blocked = false, index = 0, count = if (location) 2 else 1) {
+            val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
+            runCatching { context.startActivity(request) }.onFailure { context.openAppSettings() }
+        }
+        // Android only offers "all the time" once foreground location is granted.
+        if (location) {
+            PermissionRow(R.drawable.ic_autorenew, "Location all the time",
+                if (allTheTime) "Sharing restarts by itself after the phone restarts"
+                else "Optional: lets sharing restart by itself after the phone restarts",
+                allTheTime, backgroundBlocked, index = 1, count = 2) {
+                if (backgroundBlocked) context.openAppSettings()
+                else backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            }
         }
     }
-    Note("After the phone restarts, open Ping once to start sharing again. You can change how often it " +
-        "updates in Settings.")
+    Note(
+        (if (allTheTime) "" else "Without \"all the time\", open Ping once after the phone restarts to start sharing again. ") +
+            "You can change how often it updates in Settings."
+    )
 }
 
 // ---- Building blocks -------------------------------------------------------------------------
@@ -611,14 +632,11 @@ private fun Note(text: String) {
 
 // ---- Helpers ---------------------------------------------------------------------------------
 
+private fun Context.openAppSettings() = startActivity(
+    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+
 private fun Context.granted(permission: String) =
     checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
 private fun Context.hasLocation() =
     granted(Manifest.permission.ACCESS_FINE_LOCATION) || granted(Manifest.permission.ACCESS_COARSE_LOCATION)
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}

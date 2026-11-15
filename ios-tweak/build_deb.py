@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Builds FindMyLiveBridge.dylib + FindMyLiveBridgePrefs.bundle (arm64, iOS 15.0+)
+Builds PingRelay.dylib + PingRelayPrefs.bundle (arm64, iOS 15.0+)
 using Xcode's iphoneos SDK, ad-hoc signs them with codesign, and packages a
 Dopamine rootless Debian package:
-  build/com.findmy.livebridge_<Version>_iphoneos-arm64.deb
+  build/uk.maynotfunction.pingrelay_<Version>_iphoneos-arm64.deb
 The version comes from the `control` file.
 """
 import io
@@ -74,7 +74,7 @@ def write_ar_deb(deb_path: Path, files):
 def main():
     BUILD.mkdir(parents=True, exist_ok=True)
     version = control_version()
-    dylib_path = BUILD / "FindMyLiveBridge.dylib"
+    dylib_path = BUILD / "PingRelay.dylib"
 
     sdk_path = subprocess.check_output(
         ["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True
@@ -98,7 +98,7 @@ def main():
         "-framework", "UIKit",
         "-framework", "CoreLocation",
         "-framework", "Security",
-        "-install_name", "/var/jb/Library/MobileSubstrate/DynamicLibraries/FindMyLiveBridge.dylib",
+        "-install_name", "/var/jb/Library/MobileSubstrate/DynamicLibraries/PingRelay.dylib",
         "-I", str(ROOT),
         str(ROOT / "Tweak.m"),
         "-o", str(dylib_path),
@@ -119,7 +119,7 @@ def main():
     ])
 
     dylib_bytes = dylib_path.read_bytes()
-    plist_bytes = (ROOT / "FindMyLiveBridge.plist").read_bytes()
+    plist_bytes = (ROOT / "PingRelay.plist").read_bytes()
 
     pref_loader_entry = (
         b'<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -129,7 +129,7 @@ def main():
         b'    <key>entry</key>\n'
         b'    <dict>\n'
         b'        <key>bundle</key>\n'
-        b'        <string>FindMyLiveBridgePrefs</string>\n'
+        b'        <string>PingRelayPrefs</string>\n'
         b'        <key>cell</key>\n'
         b'        <string>PSLinkCell</string>\n'
         b'        <key>detail</key>\n'
@@ -150,13 +150,13 @@ def main():
         b'<plist version="1.0">\n'
         b'<dict>\n'
         b'    <key>CFBundleExecutable</key>\n'
-        b'    <string>FindMyLiveBridgePrefs</string>\n'
+        b'    <string>PingRelayPrefs</string>\n'
         b'    <key>CFBundleIdentifier</key>\n'
-        b'    <string>com.findmy.livebridge.prefs</string>\n'
+        b'    <string>uk.maynotfunction.pingrelay.prefs</string>\n'
         b'    <key>CFBundleInfoDictionaryVersion</key>\n'
         b'    <string>6.0</string>\n'
         b'    <key>CFBundleName</key>\n'
-        b'    <string>FindMyLiveBridgePrefs</string>\n'
+        b'    <string>PingRelayPrefs</string>\n'
         b'    <key>CFBundlePackageType</key>\n'
         b'    <string>BNDL</string>\n'
         b'    <key>CFBundleShortVersionString</key>\n'
@@ -177,40 +177,40 @@ def main():
         ("./var/jb/Library/MobileSubstrate/", 0o755, None),
         ("./var/jb/Library/MobileSubstrate/DynamicLibraries/", 0o755, None),
         (
-            "./var/jb/Library/MobileSubstrate/DynamicLibraries/FindMyLiveBridge.dylib",
+            "./var/jb/Library/MobileSubstrate/DynamicLibraries/PingRelay.dylib",
             0o755,
             dylib_bytes,
         ),
         (
-            "./var/jb/Library/MobileSubstrate/DynamicLibraries/FindMyLiveBridge.plist",
+            "./var/jb/Library/MobileSubstrate/DynamicLibraries/PingRelay.plist",
             0o644,
             plist_bytes,
         ),
         ("./var/jb/Library/PreferenceLoader/", 0o755, None),
         ("./var/jb/Library/PreferenceLoader/Preferences/", 0o755, None),
         (
-            "./var/jb/Library/PreferenceLoader/Preferences/FindMyLiveBridge.plist",
+            "./var/jb/Library/PreferenceLoader/Preferences/PingRelay.plist",
             0o644,
             pref_loader_entry,
         ),
         ("./var/jb/Library/PreferenceBundles/", 0o755, None),
-        ("./var/jb/Library/PreferenceBundles/FindMyLiveBridgePrefs.bundle/", 0o755, None),
+        ("./var/jb/Library/PreferenceBundles/PingRelayPrefs.bundle/", 0o755, None),
         (
-            "./var/jb/Library/PreferenceBundles/FindMyLiveBridgePrefs.bundle/Info.plist",
+            "./var/jb/Library/PreferenceBundles/PingRelayPrefs.bundle/Info.plist",
             0o644,
             bundle_info_plist,
         ),
         (
-            "./var/jb/Library/PreferenceBundles/FindMyLiveBridgePrefs.bundle/FindMyLiveBridgePrefs",
+            "./var/jb/Library/PreferenceBundles/PingRelayPrefs.bundle/PingRelayPrefs",
             0o755,
             dylib_bytes,
         ),
     ])
 
     # Remove debs from earlier versions so an old one can't be installed by mistake.
-    for old in BUILD.glob("com.findmy.livebridge_*_iphoneos-arm64.deb"):
+    for old in BUILD.glob("uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb"):
         old.unlink()
-    deb_out = BUILD / f"com.findmy.livebridge_{version}_iphoneos-arm64.deb"
+    deb_out = BUILD / f"uk.maynotfunction.pingrelay_{version}_iphoneos-arm64.deb"
     write_ar_deb(
         deb_out,
         [

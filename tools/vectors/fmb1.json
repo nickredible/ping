@@ -1,0 +1,149 @@
+{
+  "_comment": "Shared fmb1 test vectors, checked by both android/app/src/test and tools/test_e2ee_protocol.m. The key is a dummy (bytes 0x00..0x1f). Envelopes come from each side's real encrypt code; regenerate them only when the format changes on purpose.",
+  "keyBase64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "channelId": "0123456789abcdef01234567",
+  "pairing": {
+    "valid": [
+      {
+        "code": "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "relayUrl": "https://ntfy.example.com",
+        "lan": null,
+        "token": null
+      },
+      {
+        "code": "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?lan=192.168.1.13:8765&token=tk_Ab-1.x",
+        "relayUrl": "https://ntfy.example.com",
+        "lan": "192.168.1.13:8765",
+        "token": "tk_Ab-1.x"
+      },
+      {
+        "code": "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?token=tk_only",
+        "relayUrl": "https://ntfy.example.com",
+        "lan": null,
+        "token": "tk_only"
+      },
+      {
+        "code": "fmb1:https://ntfy.example.com:8443:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "relayUrl": "https://ntfy.example.com:8443",
+        "lan": null,
+        "token": null
+      },
+      {
+        "code": "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "relayUrl": "https://ntfy.example.com",
+        "lan": null,
+        "token": null
+      },
+      {
+        "code": "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "relayUrl": "https://ntfy.example.com",
+        "lan": null,
+        "token": null
+      },
+      {
+        "code": "fmb1:none:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?lan=[fd7a:115c:a1e0::1]:8765",
+        "relayUrl": "none",
+        "lan": "[fd7a:115c:a1e0::1]:8765",
+        "token": null
+      },
+      {
+        "code": "  fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?lan=&token=tk_x \n",
+        "relayUrl": "https://ntfy.example.com",
+        "lan": null,
+        "token": "tk_x"
+      }
+    ],
+    "invalid": [
+      "fmb2:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODw==",
+      "fmb1:https://ntfy.example.com:abc123:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "fmb1:http:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "fmb1:none:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?lan=evil.example/path",
+      "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?token=tk_a%20b",
+      "fmb1:https://ntfy.example.com:0123456789abcdef01234567:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=?lan=10.0.0.1:8765&token=bad token",
+      "fmb1:",
+      ""
+    ]
+  },
+  "payloads": {
+    "up": {
+      "type": "location_update",
+      "seq": 1763200000000,
+      "lat": 51.5007,
+      "lon": -0.1246,
+      "hAcc": 12.5,
+      "fixTimeMs": 1763200000000,
+      "isMock": false,
+      "requestFriendsRefresh": true
+    },
+    "down": {
+      "type": "friends_state",
+      "seq": 1763200000500,
+      "relayActive": true,
+      "meDeviceActive": true,
+      "friends": [
+        {
+          "id": "friend-1",
+          "name": "Test Friend",
+          "lat": 48.8584,
+          "lon": 2.2945,
+          "hAcc": 8.0,
+          "timestampMs": 1763199990000,
+          "address": "Ünïcödé Street 1",
+          "status": "live"
+        }
+      ]
+    }
+  },
+  "envelopes": [
+    {
+      "from": "ios",
+      "payload": "up",
+      "envelope": {
+        "dir": "up",
+        "ts": 1794773314266,
+        "iv": "YwJJiTNXyw0w6/iZ",
+        "ct": "ArzmlqCEq4mw7m7zwkCYqQ+js6EEghjfP0KoL6CAcE31fNmERYKfPvilW46/Zf8bMlXPJqFC+25O9rl3TyKAnSDzZM71hF2TJjqHeYs01Kq3/xSCY7KwOjwpeOLMVbYUKNgLnbycfweOZhgB0ab+E0KZ1h2a2jZiVESo6l37mjyqdt821AreSo9eRoQemJk2yxgUvn7Ucpd60qVXul+utMRFBVDYeTw=",
+        "v": 1,
+        "tag": "Pjf/FM9jHi/3JKimQF9+ww=="
+      }
+    },
+    {
+      "from": "ios",
+      "payload": "down",
+      "envelope": {
+        "dir": "down",
+        "ts": 1794773314266,
+        "iv": "aXkuzhDuWUq+cBVi",
+        "ct": "FJkocMoIf1IZKMei4t6V930eM2WXEDPXyI/odACt55/JmNBPLTvnVAPOTfGuOHiuE8sT+bHFv7Wwyj/95PowPKmS7Cv4wS5SwCO9N2H9aCCXRPoFEPKU7he2nOzDc4RDTdd0NNwi0hNkGhYBoZih1hH+AlMKooaWHsxUfSTR+1vC9Ebo6puJK4JWHmzgX0eowXvVZuEAYRbtsGY4zyICaL1WRg/48N4HR8GrJd6RaewUml8GQQPi39cfE08pLNFzPy+uD+rKQjgOEKvkgFL1oliJbtLJcdEvq9nA2znGBXLEvZQAOQC68YSXNE6iiu/nofRfbuNupOEUhZIeE8bXS3m1EexVe5RKHftXSQCgiTs=",
+        "v": 1,
+        "tag": "3EZL0atR7znxIJFOtjZm3w=="
+      }
+    },
+    {
+      "from": "android",
+      "payload": "up",
+      "envelope": {
+        "ct": "iQTWduR3meryXJuplov4CajT1gpDFIZkFYqOW+F+M9j4bzN+OJE4PmFNiHSskS3p3EGVsrlmUGqbegDyVxVy3Q4NZspBd2AdGxhgjy/yHX8prWkts4Hd9ergUM09Q2kqJERPYWh1pv4AZDcR6/pWY0awTtKBA/9hczfiwM4ITRDezcZxAgTs8n7Xv2t1BPgL1RCeqIO2zVoXU+ss",
+        "v": 1,
+        "tag": "5vS8Jm+OpZgJWyLx3jo3aQ==",
+        "dir": "up",
+        "iv": "lo0XP9k2X8uwSBhW",
+        "ts": 1794773331723
+      }
+    },
+    {
+      "from": "android",
+      "payload": "down",
+      "envelope": {
+        "ct": "IlKf+AwGB1YBM8KA+6Xdj+5mp6Zf5EsSxhC5acEtRWUh+UpmjyDa8lVeqkLoD6JqvbNNE3OePehr2f0OXPYsk6jZFJakFVB9vt23nucfD1QAM4GvG22ysRLZdX/8P1/iAEALgNsUjeTqGiluh/6gaS/7nTqddunBj+YsLymwZ4QI+rrqq0qul9bPxnLHqriV4PMkfQuMVNndw/H2Rh48GUJ6eiG50uIZMD6h4t57PhAYsMs1jIzV4+wndfMYGD6r7ejQq1bglVTD2+graHBYZxCIepFzSzBqX2offLrlYsW++89ykW/hpPkxZKTRlfNpikr0TD8znabK",
+        "v": 1,
+        "tag": "4bFmkSNK83kAJqJXQe1Cww==",
+        "dir": "down",
+        "iv": "5xOJVaOcsZ7kF/zh",
+        "ts": 1794773331725
+      }
+    }
+  ]
+}

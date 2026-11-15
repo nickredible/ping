@@ -59,6 +59,9 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Protocol test vectors shared with the iOS side's test tool (tools/test_e2ee_protocol.m).
+    sourceSets["test"].resources.directories.add(rootProject.file("../tools/vectors").path)
 }
 
 dependencies {
@@ -76,4 +79,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.maps.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
 }

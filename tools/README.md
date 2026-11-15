@@ -12,7 +12,10 @@ implementation it mirrors. It verifies:
 - live-fix validation (rejects `isMock`, stale capture time, bad coordinates/accuracy);
 - pairing-code parsing, including `?lan=` / `&token=`, LAN/VPN-only (`none`) codes and rejection of
   unsafe characters;
-- replay protection (`seq` must increase and be recent).
+- replay protection (`seq` must increase and be recent);
+- the shared vectors in [`vectors/fmb1.json`](vectors/fmb1.json): pairing codes both sides must parse
+  the same way, and envelopes encrypted by each side. The Android unit tests check the same file.
+  The key there is a dummy. Only regenerate the envelopes when the format changes on purpose.
 
 Build and run:
 

@@ -16,6 +16,7 @@ import uk.maynotfunction.ping.core.LogLine
 import uk.maynotfunction.ping.core.MyFix
 import uk.maynotfunction.ping.core.PairingCode
 import uk.maynotfunction.ping.core.PairingConfig
+import uk.maynotfunction.ping.core.RelayWatchdog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -63,6 +64,8 @@ data class RelayStatus(
     val relayActive: Boolean = false,
     val meDeviceActive: Boolean = false,
     val lastDownlinkMs: Long = 0L,
+    /** When the oldest friends request the iPhone hasn't answered was sent; 0 if none. */
+    val unansweredSinceMs: Long = 0L,
 )
 
 /** Single source of truth for settings, this phone's fix, friends, relay status and the debug log. */
@@ -194,11 +197,22 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
         log("Rejected fix: $reason")
     }
 
+    /** A request for friends sent at [sentAtMs] reached the relay (or, LAN/VPN only, should have). */
+    fun recordFriendsRequest(sentAtMs: Long) {
+        _status.update {
+            it.copy(unansweredSinceMs = RelayWatchdog.afterRequest(it.unansweredSinceMs, it.lastDownlinkMs, sentAtMs))
+        }
+    }
+
+    /** Starts the quiet-iPhone clock afresh, e.g. when sharing starts after a pause. */
+    fun clearUnansweredRequests() = _status.update { it.copy(unansweredSinceMs = 0L) }
+
     suspend fun applyDownlink(payload: JSONObject) {
         _status.update {
             it.copy(relayActive = payload.optBoolean("relayActive", true),
                 meDeviceActive = payload.optBoolean("meDeviceActive", true),
-                lastDownlinkMs = System.currentTimeMillis())
+                lastDownlinkMs = System.currentTimeMillis(),
+                unansweredSinceMs = 0L)
         }
         val arr = payload.optJSONArray("friends") ?: return
         val list = (0 until arr.length()).mapNotNull { FriendLocation.fromJson(arr.optJSONObject(it)) }

@@ -16,13 +16,13 @@ friends' decrypted locations, and runs the encrypted relay hub. See
 |---|---|
 | `Tweak.m` | The tweak: CoreLocation and Find My hooks, the relay hub, the LAN server and the native settings pane (`FMBSettingsViewController`). |
 | `FMBShared.h` | Shared protocol code: CommonCrypto AES-GCM, `fmb1` envelope, pairing codes, fix validation, replay protection. Also compiled by [`../tools/test_e2ee_protocol.m`](../tools/test_e2ee_protocol.m). |
-| `FindMyLiveBridge.plist` | ElleKit/Substrate filter: which processes the dylib loads into. |
+| `PingRelay.plist` | ElleKit/Substrate filter: which processes the dylib loads into. |
 | `control` | Debian package metadata. The **version** is read from here at build time. |
 | `build_deb.py` | Compiles and ad-hoc signs the dylib and packages the rootless `.deb`. |
 
 ## Which processes it loads into
 
-The filter in `FindMyLiveBridge.plist` decides where it loads, and each process gets its own role:
+The filter in `PingRelay.plist` decides where it loads, and each process gets its own role:
 
 | Process | Role |
 |---|---|
@@ -44,9 +44,9 @@ python3 build_deb.py
 ```
 
 This compiles `Tweak.m` for arm64 (iOS 15.0+), ad-hoc signs it, and writes
-`build/com.findmy.livebridge_<version>_iphoneos-arm64.deb`. Older `.deb`s in `build/` are deleted,
+`build/uk.maynotfunction.pingrelay_<version>_iphoneos-arm64.deb`. Older `.deb`s in `build/` are deleted,
 and `build/` is gitignored. The same dylib goes in twice: once as the tweak in
-`/var/jb/Library/MobileSubstrate/DynamicLibraries/`, and once as the `FindMyLiveBridgePrefs`
+`/var/jb/Library/MobileSubstrate/DynamicLibraries/`, and once as the `PingRelayPrefs`
 preference bundle that PreferenceLoader opens.
 
 **To release a new version**, bump `Version:` in `control`, plus the version string in the LAN health
@@ -58,11 +58,11 @@ Install these from your package manager first: **ElleKit** (or another substrate
 **PreferenceLoader**. Then:
 
 ```bash
-scp build/com.findmy.livebridge_*_iphoneos-arm64.deb root@<iphone>:/tmp/
+scp build/uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb root@<iphone>:/tmp/
 ```
 
 ```bash
-ssh root@<iphone> 'dpkg -i /tmp/com.findmy.livebridge_*_iphoneos-arm64.deb'
+ssh root@<iphone> 'dpkg -i /tmp/uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb'
 ```
 
 **Respring afterwards** so SpringBoard loads the relay hub. The package's `postinst` kills `fmfd`,
@@ -77,8 +77,8 @@ Then:
 On first run the tweak creates a config with a fresh channel and key, `https://ntfy.sh` as the relay,
 and its own LAN address.
 
-To uninstall, run `dpkg -r com.findmy.livebridge` and respring. The config and state files under
-`/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.*` stay behind; delete them by hand.
+To uninstall, run `dpkg -r uk.maynotfunction.pingrelay` and respring. The config and state files under
+`/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.*` stay behind; delete them by hand.
 
 ## Settings pane
 
@@ -130,7 +130,7 @@ curl -s -X POST --data-binary @code.txt http://127.0.0.1:8765/v1/pairing
 
 Run these on the device, e.g. `ssh root@<iphone> curl …`. Setting a code this way resets Enable and
 Also Replace Device Location to their defaults. The current code is also in
-`/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.pairing.txt`.
+`/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.pairing.txt`.
 
 ## Using it alongside OpenBubbles
 
@@ -148,10 +148,10 @@ same path.
 ## Debugging
 
 Create a flag file to turn on verbose capture into
-`/var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug.d/`:
+`/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug.d/`:
 
 ```bash
-touch /var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.debug
+touch /var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.debug
 ```
 
 | File in `debug.d/` | Contents |
@@ -173,7 +173,7 @@ curl -s http://127.0.0.1:8765/
 ```
 
 ```bash
-cat /var/jb/var/mobile/Library/Preferences/com.findmy.livebridge.state.json
+cat /var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.state.json
 ```
 
 The first returns the hub's version if SpringBoard loaded the tweak. The second shows the current
