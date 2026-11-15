@@ -1863,7 +1863,7 @@ static void startLocalHttpServer(void) {
                     NSString *headers = nil;
                     NSData *bodyData = readHttpRequest(clientFd, &headers);
 
-                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"1.5.0\"}";
+                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"1.5.1\"}";
                     NSString *contentType = @"application/json";
                     int statusCode = 200;
                     NSString *body = bodyData ? [[NSString alloc] initWithData:bodyData encoding:NSUTF8StringEncoding] : nil;
