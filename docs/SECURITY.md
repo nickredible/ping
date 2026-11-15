@@ -73,7 +73,7 @@ What the safeguards cover and, more importantly, what they don't.
   Android. Without this, locating the relay iPhone itself from iCloud would show the Android phone.
 - **Disabling `identityservicesd` (OpenBubbles users).** This is required so the relay iPhone
   doesn't interfere with the OpenBubbles relay
-  ([`README.md`](../README.md#6-openbubbles-users-disable-identityservicesd)). It's another
+  ([`README.md`](../README.md#3-configure-the-iphone)). It's another
   unsupported change to a device signed into your account.
 - **Reliance on private APIs.** Friend capture and the on-demand fetch hook undocumented iOS 15 Find
   My internals. They've only been tested on 15.4.1, and a different iOS version can break them in ways that fail

@@ -6,8 +6,8 @@
 > - **100% vibe-coded** and not audited.
 > - **Using this may be against Apple's terms of service.** You take full responsibility for
 >   anything that happens to your Apple Account or devices.
-> - **OpenBubbles users must disable `identityservicesd`** on the relay iPhone, or it interferes
->   with the OpenBubbles relay ([step 6](#6-openbubbles-users-disable-identityservicesd)).
+> - **OpenBubbles users must disable `identityservicesd`** on the relay iPhone before signing in to
+>   iCloud, or it interferes with the OpenBubbles relay ([step 3](#3-configure-the-iphone)).
 
 > [!NOTE]
 > Not affiliated with Apple or OpenBubbles. All names and trademarks belong to their respective holders.
@@ -88,10 +88,24 @@ More detail: [`ios-tweak/README.md`](ios-tweak/README.md).
 
 ### 3. Configure the iPhone
 
-1. **Settings → [your name] → Find My → Use This iPhone as My Location.**
-2. **Settings → Ping Relay:** set **Internet Relay Server** to your ntfy URL (this creates a new
+1. **OpenBubbles users: disable `identityservicesd` first.** If you use
+   [OpenBubbles](https://openbubbles.app) with the same Apple Account, do this before signing in to
+   iCloud. Otherwise Apple removes your phone number from the account shortly after every
+   OpenBubbles sign-in, and OpenBubbles gets logged out with error 6005. As root:
+
+   ```bash
+   launchctl unload -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
+   ```
+
+   The `-w` keeps it off across reboots. To undo it, run `launchctl load -w` with the same path.
+2. **Sign in to iCloud** with your Apple Account (**Settings → Sign in to your iPhone**).
+   - **OpenBubbles users:** make sure **iMessage** (Settings → Messages) and **FaceTime**
+     (Settings → FaceTime) are off. To be safe, also turn off everything under
+     **Settings → [your name] → iCloud**. Leave Find My on.
+3. **Settings → [your name] → Find My → Use This iPhone as My Location.**
+4. **Settings → Ping Relay:** set **Internet Relay Server** to your ntfy URL (this creates a new
    key), then **Relay Access Token** to your `tk_…` token.
-3. Open **Find My → People** once, so the tweak learns your friends' IDs and names.
+5. Open **Find My → People** once, so the tweak learns your friends' IDs and names.
 
 The **Active Pairing Code** (`fmb1:…`) now holds your relay, token and encryption key. **Treat it
 like a password.**
@@ -118,25 +132,6 @@ ssh root@<iphone> curl -s http://127.0.0.1:8765/v1/pairing
 Afterwards the iPhone's **Bridge Status** says *Active*. To redo setup, go to **Settings → Run setup
 again**.
 
-### 6. OpenBubbles users: disable `identityservicesd`
-
-**If you also use [OpenBubbles](https://openbubbles.app) with the same Apple Account, this step is
-required.** Without it, Apple removes your phone number from the account shortly after every
-OpenBubbles sign-in and OpenBubbles gets logged out with error 6005.
-
-On the relay iPhone, as root:
-
-```bash
-launchctl unload -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
-```
-
-The `-w` keeps it off across reboots. **iMessage and FaceTime stop working on the relay iPhone**,
-which is fine for a phone that only relays. To undo it:
-
-```bash
-launchctl load -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
-```
-
 ## Good to know
 
 - Sharing runs as a foreground service. It restarts by itself after a reboot if location is allowed
@@ -155,7 +150,7 @@ launchctl load -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plis
 | No friends in Ping | Open Find My → People on the iPhone once, then refresh in Ping |
 | Me tab says *Not set as the My Location device* | Use This iPhone as My Location (step 3) |
 | *Relay iPhone isn't responding* notification | Check the iPhone is on and online. If it restarted, re-jailbreak it with Dopamine |
-| OpenBubbles keeps logging out (6005) | Step 6 |
+| OpenBubbles keeps logging out (6005) | Disable `identityservicesd` (step 3) |
 
 ## Docs
 

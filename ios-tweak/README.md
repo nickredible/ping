@@ -134,16 +134,16 @@ Also Replace Device Location to their defaults. The current code is also in
 
 ## Using it alongside OpenBubbles
 
-If the same Apple Account is used with OpenBubbles, disable `identityservicesd` on this iPhone, or
-Apple strips the phone number from the account after each OpenBubbles sign-in and OpenBubbles is
-logged out (error 6005):
+If the same Apple Account is used with OpenBubbles, disable `identityservicesd` on this iPhone
+**before signing it in to iCloud**, or Apple strips the phone number from the account after each
+OpenBubbles sign-in and OpenBubbles is logged out (error 6005):
 
 ```bash
 launchctl unload -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
 ```
 
-iMessage and FaceTime then stop working on this iPhone. To undo it, use `launchctl load -w` with the
-same path.
+Then sign in, and keep iMessage and FaceTime off. To undo it, use `launchctl load -w` with the same
+path. Full order: [README step 3](../README.md#3-configure-the-iphone).
 
 ## Debugging
 
