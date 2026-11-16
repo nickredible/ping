@@ -51,9 +51,9 @@ and `build/` is gitignored. The same dylib goes in twice: once as the tweak in
 `/var/jb/Library/MobileSubstrate/DynamicLibraries/`, and once as the `PingRelayPrefs`
 preference bundle that PreferenceLoader opens.
 
-**To release a new version**, bump `Version:` in `control`, plus the version string in the LAN health
-response in `Tweak.m` (`"version":"…"`), which is hard-coded. Attach the `.deb` to the GitHub
-release, and the Sileo repo (`https://nickredible.github.io/ping/`) updates itself.
+**To release a new version**, bump `Version:` in `control`. `build_deb.py` passes it to the compiler,
+so the LAN health response and the version Ping sees match. Attach the `.deb` to the GitHub release,
+and the Sileo repo (`https://nickredible.github.io/ping/`) updates itself.
 
 ## Install
 

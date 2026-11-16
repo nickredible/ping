@@ -128,6 +128,7 @@ All downlink types share one shape:
 | `liveFixActive` | bool | Whether an Android fix is stored and being injected (it never expires) |
 | `lastInjectedFixTimeMs` | int (ms) | Capture time of that fix, or 0 |
 | `relayTimeMs` | int (ms) | Informational |
+| `relayVersion` | string | Ping Relay's version, for display and update checks. Not sent by 1.6.0 and earlier |
 | `fmfdHooked` | bool | Always `true`; informational |
 
 A `locate_request` asks Android to upload a fresh, precise fix now. The iPhone sends one whenever

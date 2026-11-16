@@ -69,6 +69,9 @@ Fonts under the SIL OFL 1.1 (`app/src/main/assets/licenses/`).
   minutes, the iPhone is off, offline or no longer jailbroken. Requests that never left this phone
   don't count, so being offline doesn't trigger it. In LAN/VPN-only mode, an unanswered LAN request
   with a network up counts. The alert clears itself when the iPhone answers again.
+- **Updates**: once a day, `UpdateCheckJob` asks the GitHub API for the latest release and notifies
+  (*App updates* channel, once per version) if it has a newer Ping, or a newer Ping Relay than the
+  relay iPhone reports. Settings → About shows both versions.
 - **With sharing paused**, the app still streams friend updates, but only while it's on screen.
 - **The downlink** is one long-lived streaming connection to `<relay>/fmb-<channel>-down/json` with a
   100 s read timeout (ntfy keepalives arrive every ~45 s). It reconnects with exponential backoff (5 s

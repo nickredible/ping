@@ -58,6 +58,9 @@ What the safeguards cover and, more importantly, what they don't.
 - **Relay metadata.** The relay can't read payloads, but it sees topic names (derived from the
   channel ID), message timing and sizes, and both phones' IP addresses. On public `ntfy.sh` that's a
   third party. Self-host ntfy with a token to keep it in-house ([`RELAY.md`](RELAY.md)).
+- **Update check.** Once a day Ping fetches the latest release from `api.github.com`, which sees this
+  phone's IP address and Ping's version (in the User-Agent). Nothing about your location or pairing
+  is sent.
 - **The LAN server listens on every interface.** TCP 8765 is reachable by anything on the iPhone's
   networks, including VPNs. Without the key it can only fetch a health response with the tweak's
   version, or make the iPhone try to decrypt garbage. `/v1/stream` only stays open for a request

@@ -54,6 +54,7 @@ import uk.maynotfunction.ping.R
 import uk.maynotfunction.ping.core.Cadence
 import uk.maynotfunction.ping.core.LogLine
 import uk.maynotfunction.ping.core.PairingConfig
+import uk.maynotfunction.ping.core.UpdateCheck
 import uk.maynotfunction.ping.data.MapProvider
 import uk.maynotfunction.ping.data.MapStyle
 import uk.maynotfunction.ping.ui.map.GoogleMapsStatus
@@ -262,16 +263,29 @@ fun SettingsTab(
         }
 
         sectionHeader("About")
+        val update = settings.latestRelease?.let {
+            UpdateCheck.available(it, BuildConfig.VERSION_NAME, settings.relayVersion.ifBlank { null })
+        }
+        val openRelease = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(settings.latestRelease!!.url))) }
         item(key = "version") {
-            InfoItem("Version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", segmentedShapes(0, 3), R.drawable.ic_info)
+            val installed = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+            update?.appVersion?.let { v ->
+                ClickItem("Ping $installed", "$v is available. Tap to open the release.", segmentedShapes(0, 4), R.drawable.ic_download, openRelease)
+            } ?: InfoItem("Ping", installed, segmentedShapes(0, 4), R.drawable.ic_info)
+        }
+        item(key = "relayVersion") {
+            val installed = settings.relayVersion.ifBlank { "Unknown. Older versions of Ping Relay don't report it." }
+            update?.relayVersion?.let { v ->
+                ClickItem("Ping Relay $installed", "$v is available. Tap to open the release.", segmentedShapes(1, 4), R.drawable.ic_download, openRelease)
+            } ?: InfoItem("Ping Relay", installed, segmentedShapes(1, 4), R.drawable.ic_info)
         }
         item(key = "licenses") {
-            ClickItem("Open source licenses", null, segmentedShapes(1, 3), R.drawable.ic_description) {
+            ClickItem("Open source licenses", null, segmentedShapes(2, 4), R.drawable.ic_description) {
                 dialog = EditDialog.Licenses
             }
         }
         item(key = "author") {
-            ClickItem("Made by Nick", "github.com/nickredible", segmentedShapes(2, 3), R.drawable.ic_person) {
+            ClickItem("Made by Nick", "github.com/nickredible", segmentedShapes(3, 4), R.drawable.ic_person) {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AUTHOR_URL)))
             }
         }

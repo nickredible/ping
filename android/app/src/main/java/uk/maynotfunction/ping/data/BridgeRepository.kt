@@ -10,8 +10,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import uk.maynotfunction.ping.core.AvailableUpdate
 import uk.maynotfunction.ping.core.Cadence
 import uk.maynotfunction.ping.core.FriendLocation
+import uk.maynotfunction.ping.core.LatestRelease
 import uk.maynotfunction.ping.core.LogLine
 import uk.maynotfunction.ping.core.MyFix
 import uk.maynotfunction.ping.core.PairingCode
@@ -50,6 +52,10 @@ data class Settings(
     val cachedFriendsJson: String = "",
     /** False until the first-run setup is finished (or skipped). */
     val onboardingDone: Boolean = false,
+    /** Ping Relay's version as the iPhone last reported it; empty until a relay that reports it answers. */
+    val relayVersion: String = "",
+    /** The newest GitHub release seen by the daily update check; null before the first check. */
+    val latestRelease: LatestRelease? = null,
 ) {
     val pairing: PairingConfig? get() = PairingCode.parse(pairingCode)
 }
@@ -84,6 +90,12 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
         val friends = stringPreferencesKey("cached_friends_json")
         val onboarded = booleanPreferencesKey("onboarding_done")
         val mapStyleReset = booleanPreferencesKey("map_style_reset_2_5_2")
+        val relayVersion = stringPreferencesKey("relay_version")
+        val latestApp = stringPreferencesKey("latest_release_app")
+        val latestRelay = stringPreferencesKey("latest_release_relay")
+        val latestUrl = stringPreferencesKey("latest_release_url")
+        val notifiedApp = stringPreferencesKey("update_notified_app")
+        val notifiedRelay = stringPreferencesKey("update_notified_relay")
     }
 
     val settings: StateFlow<Settings> = store.data
@@ -102,6 +114,8 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
                 // Installs from before setup existed count as set up if they've received friends
                 // (made permanent in init, before any new friends can arrive).
                 onboardingDone = p[Keys.onboarded] ?: !p[Keys.friends].isNullOrEmpty(),
+                relayVersion = p[Keys.relayVersion].orEmpty(),
+                latestRelease = p[Keys.latestApp]?.let { LatestRelease(it, p[Keys.latestRelay], p[Keys.latestUrl].orEmpty()) },
             )
         }
         .stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -214,6 +228,10 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
                 lastDownlinkMs = System.currentTimeMillis(),
                 unansweredSinceMs = 0L)
         }
+        payload.optString("relayVersion").takeIf { it.isNotBlank() && it != settings.value.relayVersion }?.let { v ->
+            store.edit { it[Keys.relayVersion] = v }
+            log("Relay iPhone runs Ping Relay $v")
+        }
         val arr = payload.optJSONArray("friends") ?: return
         val list = (0 until arr.length()).mapNotNull { FriendLocation.fromJson(arr.optJSONObject(it)) }
         store.edit { it[Keys.friends] = FriendLocation.listToJson(list) }
@@ -237,12 +255,39 @@ class BridgeRepository(context: Context, private val scope: CoroutineScope) {
     suspend fun setMapStyle(style: MapStyle) = store.edit { it[Keys.mapStyle] = style.ordinal }
     suspend fun setMapProvider(provider: MapProvider) = store.edit { it[Keys.mapProvider] = provider.ordinal }
     suspend fun clearCachedFriends() = store.edit { it.remove(Keys.friends) }
+
+    suspend fun setLatestRelease(release: LatestRelease) = store.edit {
+        it[Keys.latestApp] = release.appVersion
+        if (release.relayVersion != null) it[Keys.latestRelay] = release.relayVersion else it.remove(Keys.latestRelay)
+        it[Keys.latestUrl] = release.url
+    }
+
+    /**
+     * The parts of [update] not already notified about, recorded as notified. Each version is
+     * announced once, so updating one component doesn't re-announce the other.
+     */
+    suspend fun claimUnnotified(update: AvailableUpdate): AvailableUpdate {
+        var fresh = AvailableUpdate(null, null)
+        store.edit { p ->
+            fresh = AvailableUpdate(
+                appVersion = update.appVersion?.takeIf { it != p[Keys.notifiedApp] },
+                relayVersion = update.relayVersion?.takeIf { it != p[Keys.notifiedRelay] },
+            )
+            fresh.appVersion?.let { p[Keys.notifiedApp] = it }
+            fresh.relayVersion?.let { p[Keys.notifiedRelay] = it }
+        }
+        return fresh
+    }
+
     suspend fun setOnboardingDone(done: Boolean) = store.edit { it[Keys.onboarded] = done }
 
     /** Saves [code] if it parses; returns false otherwise. */
     suspend fun setPairingCode(code: String): Boolean {
         val cfg = PairingCode.parse(code) ?: return false
-        store.edit { it[Keys.pairing] = cfg.raw }
+        store.edit {
+            it[Keys.pairing] = cfg.raw
+            it.remove(Keys.relayVersion) // may be a different iPhone; it reports again on its next reply
+        }
         log("Pairing code updated (channel ${cfg.channelId.take(8)}…)")
         return true
     }

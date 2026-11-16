@@ -23,6 +23,12 @@
 
 #pragma mark - Constants & Paths
 
+// Set by build_deb.py from the control file's Version.
+#ifndef PING_RELAY_VERSION
+#define PING_RELAY_VERSION "dev"
+#endif
+
+
 static NSString *const kConfigPathRootless  = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.config.json";
 static NSString *const kPairingTxtRootless  = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.pairing.txt";
 static NSString *const kStatePathRootless   = @"/var/jb/var/mobile/Library/Preferences/uk.maynotfunction.pingrelay.state.json";
@@ -1634,6 +1640,7 @@ static NSDictionary *buildDownlinkPayload(NSString *msgType, NSDictionary *extra
         @"fmfdHooked": @YES,
         @"lastInjectedFixTimeMs": liveState[@"fixTimeMs"] ?: @0,
         @"liveFixActive": @(liveState != nil),
+        @"relayVersion": @PING_RELAY_VERSION,
         @"friends": friendsList
     } mutableCopy];
     if (extra) [payload addEntriesFromDictionary:extra];
@@ -1982,7 +1989,7 @@ static void startLocalHttpServer(void) {
                     NSString *headers = nil;
                     NSData *bodyData = readHttpRequest(clientFd, &headers);
 
-                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"1.6.0\"}";
+                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"" PING_RELAY_VERSION "\"}";
                     NSString *contentType = @"application/json";
                     int statusCode = 200;
                     NSString *body = bodyData ? [[NSString alloc] initWithData:bodyData encoding:NSUTF8StringEncoding] : nil;

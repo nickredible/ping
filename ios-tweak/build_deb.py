@@ -91,6 +91,7 @@ def main():
         "-dynamiclib",
         "-fobjc-arc",
         "-O2",
+        f'-DPING_RELAY_VERSION="{version}"',
         "-Wall",
         "-Wextra",
         "-Wno-unused-parameter",

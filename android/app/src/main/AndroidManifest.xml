@@ -50,6 +50,12 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Daily check for a newer GitHub release. -->
+        <service
+            android:name=".service.UpdateCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name=".service.BootReceiver"
             android:exported="false">
