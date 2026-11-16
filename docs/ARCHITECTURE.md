@@ -78,8 +78,17 @@ driven by the location updates Find My receives during the session: timers on a 
 iPhone can run more than a minute late.
 
 During a session Ping takes high-accuracy fixes every 3 s and uploads whenever you've moved 5 m
-(at most every 10 s on the public `ntfy.sh`). It drops back if the keep-alives stop for 150 s, and
-after 30 minutes at most.
+(at most every 10 s on the public `ntfy.sh`). It goes back to its normal mode
+([`android/README.md`](../android/README.md#battery)) in whichever of these comes first:
+
+| Ends when | Typically | Why |
+|---|---|---|
+| The iPhone sends `active: false` | 5 s after Find My stops, 1 to 8 minutes into the session | The normal case. Ping doesn't need Apple's stop push. |
+| No `live` message for 150 s | 2 to 3 minutes after the iPhone goes quiet | The iPhone lost signal or died mid-session, or `active: false` got lost. |
+| 30 minutes after the session started | Only if keep-alives keep coming | A cap in case Find My gets stuck. Ping then ignores that session's keep-alives until the iPhone sends `active: false` or goes quiet for 150 s. After that, a new session can start. |
+
+So Ping streams precise fixes for 30 minutes at most, and only while the iPhone keeps saying someone
+is looking. This logic is in `LiveSession` (`core/LiveSession.kt`, with unit tests).
 
 ## Your location: Android → Apple
 
