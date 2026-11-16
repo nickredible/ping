@@ -71,8 +71,8 @@ What the safeguards cover and, more importantly, what they don't.
   iPhone (`findmydeviced`) and the offline-finding network (`searchpartyd`) also report the Android
   position. Turn it off to leave them on the iPhone's real GPS while Share My Location still uses
   Android. Without this, locating the relay iPhone itself from iCloud would show the Android phone.
-- **Disabling `identityservicesd` (OpenBubbles users).** This is required so the relay iPhone
-  doesn't interfere with the OpenBubbles relay
+- **Disabling `identityservicesd` (OpenBubbles users).** This is required, once friends have
+  synced, so the relay iPhone doesn't interfere with the OpenBubbles relay
   ([`README.md`](../README.md#3-configure-the-iphone)). It's another
   unsupported change to a device signed into your account.
 - **Reliance on private APIs.** Friend capture and the on-demand fetch hook undocumented iOS 15 Find

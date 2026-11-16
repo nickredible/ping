@@ -6,8 +6,8 @@
 > - **100% vibe-coded** and not audited.
 > - **Using this may be against Apple's terms of service.** You take full responsibility for
 >   anything that happens to your Apple Account or devices.
-> - **OpenBubbles users must disable `identityservicesd`** on the relay iPhone before signing in to
->   iCloud, or it interferes with the OpenBubbles relay ([step 3](#3-configure-the-iphone)).
+> - **OpenBubbles users will likely have to re-register their phone number** during setup. Follow
+>   [step 3](#3-configure-the-iphone) carefully to avoid it being removed again later.
 
 > [!NOTE]
 > Not affiliated with Apple or OpenBubbles. All names and trademarks belong to their respective holders.
@@ -88,27 +88,34 @@ More detail: [`ios-tweak/README.md`](ios-tweak/README.md).
 
 ### 3. Configure the iPhone
 
-1. **OpenBubbles users: disable `identityservicesd` first.** If you use
-   [OpenBubbles](https://openbubbles.app) with the same Apple Account, do this before signing in to
-   iCloud. Otherwise Apple removes your phone number from the account shortly after every
-   OpenBubbles sign-in, and OpenBubbles gets logged out with error 6005. As root:
+1. **Sign in to iCloud** with your Apple Account (**Settings → Sign in to your iPhone**). Leave
+   `identityservicesd` running for now: your friends' phones send their location keys to a newly
+   signed-in iPhone over it, and without them Find My shows *No location found*.
+   - **OpenBubbles users:** make sure **iMessage** (Settings → Messages) and **FaceTime**
+     (Settings → FaceTime) are off. To be safe, also turn off everything under
+     **Settings → [your name] → iCloud**. Leave Find My on.
+   - **Already signed in to OpenBubbles?** Expect it to log out (error 6005) while
+     `identityservicesd` runs, because Apple removes your phone number. You sign back in at step 6.
+2. **Settings → [your name] → Find My → Use This iPhone as My Location.**
+3. **Settings → Ping Relay:** set **Internet Relay Server** to your ntfy URL (this creates a new
+   key), then **Relay Access Token** to your `tk_…` token.
+4. Open **Find My → People** and **wait until every friend shows a location.** This can take a
+   while. If someone stays on *No location found*, ask them to stop sharing with you and share again.
+5. **OpenBubbles users: now disable `identityservicesd`.** As root:
 
    ```bash
    launchctl unload -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
    ```
 
-   The `-w` keeps it off across reboots. To undo it, run `launchctl load -w` with the same path.
-2. **Sign in to iCloud** with your Apple Account (**Settings → Sign in to your iPhone**).
-   - **OpenBubbles users:** make sure **iMessage** (Settings → Messages) and **FaceTime**
-     (Settings → FaceTime) are off. To be safe, also turn off everything under
-     **Settings → [your name] → iCloud**. Leave Find My on.
-3. **Settings → [your name] → Find My → Use This iPhone as My Location.**
-4. **Settings → Ping Relay:** set **Internet Relay Server** to your ntfy URL (this creates a new
-   key), then **Relay Access Token** to your `tk_…` token.
-5. Open **Find My → People** once, so the tweak learns your friends' IDs and names.
+   The `-w` keeps it off across reboots. Friends keep updating without it. To undo it, run
+   `launchctl load -w` with the same path.
+6. **OpenBubbles users:** sign in to OpenBubbles (again, if it logged out).
 
 The **Active Pairing Code** (`fmb1:…`) now holds your relay, token and encryption key. **Treat it
 like a password.**
+
+**Don't sign the relay out of iCloud later.** Signing back in makes it a new device to your friends'
+phones, so you'd have to repeat steps 1–6, including the OpenBubbles logout.
 
 ### 4. Install Ping on Android
 
@@ -150,9 +157,10 @@ again**.
 | Bridge Status stuck on *Waiting for Android GPS* | Re-paste the code, check the token, and make sure your proxy doesn't buffer streams |
 | `Relay rate limit (429)` in Ping | Self-host ntfy |
 | No friends in Ping | Open Find My → People on the iPhone once, then refresh in Ping |
+| A friend shows *No location found* on the iPhone | Their key never reached the relay. Turn `identityservicesd` on until they appear (OpenBubbles users lose OpenBubbles meanwhile), or ask them to share again |
 | Me tab says *Not set as the My Location device* | Use This iPhone as My Location (step 3) |
 | *Relay iPhone isn't responding* notification | Check the iPhone is on and online. If it restarted, re-jailbreak it with Dopamine |
-| OpenBubbles keeps logging out (6005) | Disable `identityservicesd` (step 3) |
+| OpenBubbles keeps logging out (6005) | Disable `identityservicesd` once friends have synced (step 3) |
 
 ## Docs
 

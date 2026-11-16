@@ -134,16 +134,23 @@ Also Replace Device Location to their defaults. The current code is also in
 
 ## Using it alongside OpenBubbles
 
-If the same Apple Account is used with OpenBubbles, disable `identityservicesd` on this iPhone
-**before signing it in to iCloud**, or Apple strips the phone number from the account after each
-OpenBubbles sign-in and OpenBubbles is logged out (error 6005):
+While `identityservicesd` runs on this iPhone, Apple strips the phone number from an Apple Account
+shared with OpenBubbles, and OpenBubbles is logged out (error 6005). But friends' phones send their
+location keys to a newly signed-in iPhone over IDS, so it has to run until every friend shows a
+location in Find My. Without a key, Find My shows *No location found* and Ping gets nothing for that
+friend. After that, friends keep updating with it off.
+
+So: sign in to iCloud with it running (iMessage and FaceTime off), wait for every friend, then:
 
 ```bash
 launchctl unload -w /System/Library/LaunchDaemons/com.apple.identityservicesd.plist
 ```
 
-Then sign in, and keep iMessage and FaceTime off. To undo it, use `launchctl load -w` with the same
-path. Full order: [README step 3](../README.md#3-configure-the-iphone).
+and sign in to OpenBubbles again. To undo it, use `launchctl load -w` with the same path. Signing this
+iPhone out of iCloud later means doing it all again. Full order:
+[README step 3](../README.md#3-configure-the-iphone).
+
+With it disabled, Settings → Messages and FaceTime hang and Settings gets killed. That's expected.
 
 ## Debugging
 
