@@ -3,8 +3,8 @@ Name: Ping Relay
 Version: 1.6.0
 Architecture: iphoneos-arm64
 Description: Ping Relay — two-way live location bridge for Apple Find My (fmfd) on Dopamine rootless (ElleKit), with native iOS Settings pane and E2EE (AES-256-GCM).
-Maintainer: Nick
-Author: Nick
+Maintainer: nickredible
+Author: nickredible
 Section: Tweaks
 Homepage: https://github.com/nickredible/ping
 Icon: https://nickredible.github.io/ping/CydiaIcon.png
