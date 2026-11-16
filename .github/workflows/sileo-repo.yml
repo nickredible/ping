@@ -1,0 +1,55 @@
+# Publishes the Sileo/apt repo for Ping Relay to GitHub Pages
+# (https://nickredible.github.io/ping/), built from every release's
+# uk.maynotfunction.pingrelay_*.deb. Runs on each release change, or by hand.
+name: Sileo repo
+
+on:
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download tweak packages from releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p debs
+          # Newest first, so --skip-existing keeps the newest copy of a re-attached file.
+          gh release list --limit 100 --exclude-drafts --exclude-pre-releases \
+              --json tagName --jq '.[].tagName' |
+          while read -r tag; do
+            gh release download "$tag" --dir debs --skip-existing \
+                --pattern 'uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb' || true
+          done
+          ls -l debs
+
+      - name: Build repo
+        run: python3 ios-tweak/repo/build_repo.py debs _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

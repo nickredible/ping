@@ -19,6 +19,8 @@ friends' decrypted locations, and runs the encrypted relay hub. See
 | `PingRelay.plist` | ElleKit/Substrate filter: which processes the dylib loads into. |
 | `control` | Debian package metadata. The **version** is read from here at build time. |
 | `build_deb.py` | Compiles and ad-hoc signs the dylib and packages the rootless `.deb`. |
+| `icons/` | Settings row icon (`icon*.png`) and repo icon (`CydiaIcon.png`), rendered from the SVGs by `render.swift`. |
+| `repo/` | Builds the Sileo repo that [`.github/workflows/sileo-repo.yml`](../.github/workflows/sileo-repo.yml) publishes to GitHub Pages from each release's `.deb`. |
 
 ## Which processes it loads into
 
@@ -50,12 +52,14 @@ and `build/` is gitignored. The same dylib goes in twice: once as the tweak in
 preference bundle that PreferenceLoader opens.
 
 **To release a new version**, bump `Version:` in `control`, plus the version string in the LAN health
-response in `Tweak.m` (`"version":"…"`), which is hard-coded.
+response in `Tweak.m` (`"version":"…"`), which is hard-coded. Attach the `.deb` to the GitHub
+release, and the Sileo repo (`https://nickredible.github.io/ping/`) updates itself.
 
 ## Install
 
-Install these from your package manager first: **ElleKit** (or another substrate) and
-**PreferenceLoader**. Then:
+The easiest way is Sileo: add `https://nickredible.github.io/ping/` and install **Ping Relay**, which
+pulls in its dependencies. To install a `.deb` by hand, first install **ElleKit** (or another
+substrate), **PreferenceLoader** and **curl** from your package manager. Then:
 
 ```bash
 scp build/uk.maynotfunction.pingrelay_*_iphoneos-arm64.deb root@<iphone>:/tmp/

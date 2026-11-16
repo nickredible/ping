@@ -68,12 +68,13 @@ With a relay set, Ping still tries the LAN/VPN address first when it can reach i
 
 ### 2. Install the tweak
 
-**Pre-built:** download `uk.maynotfunction.pingrelay_<version>_iphoneos-arm64.deb` from
-[Releases](https://github.com/nickredible/ping/releases).
+**From Sileo (recommended):** add the source `https://nickredible.github.io/ping/`
+([one tap](https://nickredible.github.io/ping/) on the iPhone), install **Ping Relay**, then
+respring. Updates arrive through Sileo like any other tweak.
 
-**Or build it** on a Mac with Xcode command-line tools: `cd ios-tweak && python3 build_deb.py`
-(it writes to `ios-tweak/build/`).
-
+**Or the `.deb`:** download `uk.maynotfunction.pingrelay_<version>_iphoneos-arm64.deb` from
+[Releases](https://github.com/nickredible/ping/releases), or build it on a Mac with Xcode
+command-line tools (`cd ios-tweak && python3 build_deb.py`, which writes to `ios-tweak/build/`).
 Install it as root, then respring:
 
 ```bash

@@ -134,6 +134,8 @@ def main():
         b'        <string>PSLinkCell</string>\n'
         b'        <key>detail</key>\n'
         b'        <string>FMBSettingsViewController</string>\n'
+        b'        <key>icon</key>\n'
+        b'        <string>icon.png</string>\n'
         b'        <key>isController</key>\n'
         b'        <true/>\n'
         b'        <key>label</key>\n'
@@ -205,6 +207,11 @@ def main():
             0o755,
             dylib_bytes,
         ),
+    ] + [
+        # Settings row icon (the PreferenceLoader entry's `icon` key), from icons/settings-icon.svg.
+        (f"./var/jb/Library/PreferenceBundles/PingRelayPrefs.bundle/{name}", 0o644,
+         (ROOT / "icons" / name).read_bytes())
+        for name in ("icon.png", "icon@2x.png", "icon@3x.png")
     ])
 
     # Remove debs from earlier versions so an old one can't be installed by mistake.

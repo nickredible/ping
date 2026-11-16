@@ -6,6 +6,8 @@ Description: Ping Relay — two-way live location bridge for Apple Find My (fmfd
 Maintainer: Nick
 Author: Nick
 Section: Tweaks
-Depends: firmware (>= 15.0), mobilesubstrate | org.coolstar.libhooker | ellekit, preferenceloader
+Homepage: https://github.com/nickredible/ping
+Icon: https://nickredible.github.io/ping/CydiaIcon.png
+Depends: firmware (>= 15.0), mobilesubstrate | org.coolstar.libhooker | ellekit, preferenceloader, curl
 Conflicts: com.findmy.livebridge
 Replaces: com.findmy.livebridge
