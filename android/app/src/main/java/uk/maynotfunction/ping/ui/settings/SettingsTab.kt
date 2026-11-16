@@ -49,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import uk.maynotfunction.ping.BuildConfig
 import uk.maynotfunction.ping.R
 import uk.maynotfunction.ping.core.Cadence
 import uk.maynotfunction.ping.core.LogLine
@@ -62,6 +63,7 @@ import uk.maynotfunction.ping.ui.MainViewModel
 import uk.maynotfunction.ping.ui.UiState
 import uk.maynotfunction.ping.ui.components.ClickItem
 import uk.maynotfunction.ping.ui.components.ConnectedChoice
+import uk.maynotfunction.ping.ui.components.InfoItem
 import uk.maynotfunction.ping.ui.components.ItemIcon
 import uk.maynotfunction.ping.ui.components.findActivity
 import uk.maynotfunction.ping.ui.components.SwitchItem
@@ -74,7 +76,9 @@ import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
-private enum class EditDialog { PairingCode, RelayUrl, Token, Lan, Tiles, NewKey }
+private enum class EditDialog { PairingCode, RelayUrl, Token, Lan, Tiles, NewKey, Licenses }
+
+private const val AUTHOR_URL = "https://github.com/nickredible"
 
 @Composable
 fun SettingsTab(
@@ -256,6 +260,21 @@ fun SettingsTab(
             }
             item(key = "log") { LogCard(state.logs, onClear = vm::clearLog) }
         }
+
+        sectionHeader("About")
+        item(key = "version") {
+            InfoItem("Version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", segmentedShapes(0, 3), R.drawable.ic_info)
+        }
+        item(key = "licenses") {
+            ClickItem("Open source licenses", null, segmentedShapes(1, 3), R.drawable.ic_description) {
+                dialog = EditDialog.Licenses
+            }
+        }
+        item(key = "author") {
+            ClickItem("Made by Nick", "github.com/nickredible", segmentedShapes(2, 3), R.drawable.ic_person) {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AUTHOR_URL)))
+            }
+        }
     }
 
     when (dialog) {
@@ -326,6 +345,7 @@ fun SettingsTab(
             confirmButton = { TextButton(onClick = { vm.rotateKey(); dialog = null }) { Text("Generate") } },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
         )
+        EditDialog.Licenses -> LicensesDialog(onDismiss = { dialog = null })
         null -> Unit
     }
 }
