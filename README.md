@@ -159,3 +159,8 @@ again**.
 [Architecture](docs/ARCHITECTURE.md) · [Protocol](docs/PROTOCOL.md) ·
 [Security](docs/SECURITY.md) · [Relay](docs/RELAY.md) · [Android app](android/README.md) ·
 [iOS tweak](ios-tweak/README.md) · [Test tool](tools/README.md)
+
+## License
+
+[MIT](LICENSE). Bundled third-party fonts and libraries keep their own licenses, listed in Ping under
+**Settings → Open source licenses**.
