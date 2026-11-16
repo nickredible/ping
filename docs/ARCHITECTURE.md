@@ -56,9 +56,30 @@ folder and Darwin notifications (`notify_post`):
 |---|---|---|
 | `location_updated` | Hub after storing a fix; settings pane | Find My processes re-deliver the fix to active `CLLocationManager` delegates |
 | `friends_updated` | Any process after `friends.json` changes; settings pane | Hub publishes `friends_state` (unchanged lists at most every 5 min) |
-| `locate_needed` | Find My processes when something calls `startUpdatingLocation` / `requestLocation` | Hub publishes a `locate_request` to Android |
+| `locate_needed` | Find My processes when something calls `requestLocation` | Hub publishes a `locate_request` to Android |
+| `live_changed` | Find My processes when a live session starts, ends, or is refreshed (every 30 s); each keeps the time in the notify state of `live.<process>` | Hub publishes `live` to Android (see below) |
 | `request_friends_refresh` | Hub when Android asks; settings pane | `findmydeviced` fetches friends' secure locations |
 | `config_changed` | Settings pane, loopback pairing endpoint | Hub reconnects the relay stream; device daemons re-read the device-location toggle |
+
+### Live sessions
+
+When a friend opens your location (in Find My, or in Messages, which shows a live map of you), Apple
+pushes a `START_LOCATE_COMMAND` to the iPhone and `findmydeviced` asks CoreLocation for continuous
+updates at 10 m accuracy. Apple rarely sends `STOP_LOCATE_COMMAND`. Usually Find My stops by itself
+4 to 8 minutes later, and a new push restarts it if the friend is still looking. While it runs,
+Find My uploads a new position as soon as it gets one, plus one about every minute.
+
+Ping Relay treats any `startUpdatingLocation` at 100 m accuracy or better as a live session that
+lasts until every such manager calls `stopUpdatingLocation`. Background tracking asks for a much
+coarser accuracy and doesn't count. The hub sends Android `live` with `active: true` when a session
+starts and about every 30 s while it lasts. It sends `active: false` once the session has been over
+for 5 s, because Find My sometimes swaps one manager for another mid-session. The keep-alives are
+driven by the location updates Find My receives during the session: timers on a locked, sleeping
+iPhone can run more than a minute late.
+
+During a session Ping takes high-accuracy fixes every 3 s and uploads whenever you've moved 5 m
+(at most every 10 s on the public `ntfy.sh`). It drops back if the keep-alives stop for 150 s, and
+after 30 minutes at most.
 
 ## Your location: Android → Apple
 
@@ -70,7 +91,8 @@ folder and Darwin notifications (`notify_post`):
    than 1500 m and fixes older than 120 s before anything is sent.
 3. **Decide whether to upload.** A fix goes up when you've moved past the cadence's distance (15 /
    40 / 100 m, at most every 10 s), when the heartbeat is due (2 / 5 / 10 min), or on an explicit
-   request: app opened, **Sync now**, or a `locate_request` from the iPhone.
+   request: app opened, **Sync now**, or a `locate_request` from the iPhone. During a live session
+   (below), any 5 m move goes up, every 3 s (10 s on the public `ntfy.sh`).
 4. **Encrypt.** The fix becomes a `location_update` payload (coordinates, accuracy, capture time, a
    monotonic `seq`, …) inside an AES-256-GCM `fmb1` envelope ([`PROTOCOL.md`](PROTOCOL.md)).
 5. **Send.** If a LAN/VPN address is set, Ping tries `POST http://<lan>/v1/sync` first, with a 2.5 s
@@ -82,8 +104,9 @@ folder and Darwin notifications (`notify_post`):
    - `location` returns the stored fix;
    - `setDelegate:` swizzles the delegate's `locationManager:didUpdateLocations:` so it receives the
      fix instead of the real one;
-   - `startUpdatingLocation` / `requestLocation` push the fix straight away and post
-     `locate_needed`, so Android sends a fresh one;
+   - `startUpdatingLocation` / `requestLocation` push the fix straight away. `requestLocation`
+     posts `locate_needed`, so Android sends a fresh one. A precise `startUpdatingLocation` starts a
+     live session, which `stopUpdatingLocation` ends ([Live sessions](#live-sessions));
    - `CLLocationSourceInformation` `isSimulatedBySoftware` / `isProducedByAccessory` return `NO`
      while a fix is being injected.
 

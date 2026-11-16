@@ -85,6 +85,7 @@ mode shows in the **Me** tab.
 
 | Mode | When | Request |
 |---|---|---|
+| Live | Someone is viewing your location in Find My | High accuracy, every 3 s |
 | Precise | App on screen | High accuracy, every 5 s, 5 m filter |
 | Moving | Background, **Fast** | High accuracy, every 15 s, 10 m filter |
 | Moving | Background, **Balanced** | Balanced power (Wi-Fi/cell), every 60 s (≥ 30 s), 25 m filter |
@@ -101,8 +102,10 @@ What gets uploaded depends on the **Update frequency** setting:
 
 Movement uploads are at least 10 s apart. Heartbeats keep the iPhone's copy fresh (it shows
 *Holding last fix* after 20 min without one); while stationary each one takes a single balanced-power fix. **Sync now**, opening the
-app, and the iPhone's `locate_request` each take one precise fix (or reuse a recent one within
-50 m). A background upload asks the iPhone to refresh friends at most every 15 minutes. The
+app, and the iPhone's `locate_request` each take one precise fix (or reuse one from the last 15 s
+within 50 m). While someone views your location in Find My, Ping goes **Live**: high accuracy every
+3 s, uploading each 5 m move (every 10 s at most on the public `ntfy.sh`), until the iPhone says
+they've stopped. A background upload asks the iPhone to refresh friends at most every 15 minutes. The
 notification only redraws when its text changes.
 
 Check with:

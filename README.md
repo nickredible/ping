@@ -136,6 +136,8 @@ again**.
 
 - Sharing runs as a foreground service. It restarts by itself after a reboot if location is allowed
   **all the time** (setup asks, or **Settings → Restart after reboot**); otherwise open Ping once.
+- When a friend opens your location in Find My, Ping streams it live, like an iPhone, until Find My
+  stops (a few minutes after they leave).
 - If the relay iPhone stops answering for 30 minutes (off, offline, or the jailbreak lost after a
   restart), Ping notifies you.
 - When you're still, Ping goes near-idle and sends heartbeats. If it stops reporting (no signal, phone

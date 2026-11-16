@@ -23,6 +23,9 @@ class PairingConfig(
     /** False for a LAN/VPN-only code: everything goes over [lanEndpoint]. */
     val relayEnabled: Boolean get() = relayUrl != PairingCode.NO_RELAY
 
+    /** The public ntfy.sh, which only refills an anonymous client's allowance every ~5 s. */
+    val usesPublicRelay: Boolean get() = relayUrl.trimEnd('/') == PairingCode.DEFAULT_RELAY
+
     fun withRelayUrl(url: String) = PairingCode.build(url, channelId, keyBase64, lanEndpoint, relayToken)
     fun withLanEndpoint(lan: String?) = PairingCode.build(relayUrl, channelId, keyBase64, lan, relayToken)
     fun withRelayToken(token: String?) = PairingCode.build(relayUrl, channelId, keyBase64, lanEndpoint, token)

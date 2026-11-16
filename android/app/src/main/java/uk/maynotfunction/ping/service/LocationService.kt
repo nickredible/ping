@@ -18,12 +18,14 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.location.LocationRequest
 import android.os.CancellationSignal
+import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import uk.maynotfunction.ping.R
 import uk.maynotfunction.ping.bridgeApp
 import uk.maynotfunction.ping.core.Cadence
+import uk.maynotfunction.ping.core.LiveSession
 import uk.maynotfunction.ping.core.LocationValidator
 import uk.maynotfunction.ping.core.RelayWatchdog
 import uk.maynotfunction.ping.ui.MainActivity
@@ -51,7 +53,9 @@ import kotlinx.coroutines.withContext
  *    passive fixes other apps already pay for. The hardware significant-motion sensor (a wake-up
  *    trigger that costs almost nothing) switches back to Moving as soon as you start moving.
  *    Heartbeats while stationary take one quick balanced-power fix.
- * Explicit requests (Sync now, the iPhone asking for a location) take one precise fix.
+ *  - **Live** while someone views your location in Find My (the relay iPhone says so): high
+ *    accuracy every few seconds, uploading each time you've moved, like a real iPhone does.
+ * Explicit requests (Sync now, the iPhone asking for a location) take one fresh precise fix.
  */
 class LocationService : LifecycleService() {
 
@@ -74,6 +78,13 @@ class LocationService : LifecycleService() {
         private const val STATIONARY_RADIUS_M = 75f
         /** One-shot fixes give up after this long. */
         private const val ONE_SHOT_TIMEOUT_MS = 30_000L
+        /** A precise request reuses a last-known fix only if it's this fresh; heartbeats take any valid one. */
+        private const val PRECISE_REUSE_MAX_AGE_MS = 15_000L
+        /** Live: a fix every few seconds, uploaded once you've moved this far. */
+        private const val LIVE_INTERVAL_MS = 3_000L
+        private const val LIVE_DISTANCE_M = 5f
+        /** The public ntfy.sh would answer uploads every 3 s with 429s. */
+        private const val LIVE_PUBLIC_RELAY_INTERVAL_MS = 10_000L
 
         fun send(context: Context, action: String) {
             val intent = Intent(context, LocationService::class.java).setAction(action)
@@ -81,7 +92,7 @@ class LocationService : LifecycleService() {
         }
     }
 
-    private enum class Mode { Boost, Moving, Stationary }
+    private enum class Mode { Live, Boost, Moving, Stationary }
 
     private val repo by lazy { bridgeApp.repository }
     private val relay by lazy { bridgeApp.relay }
@@ -105,6 +116,10 @@ class LocationService : LifecycleService() {
     private var lastFriendsRequestMs = 0L
     private var friendsRequestPending = false
     private var quietAlertShown = false
+
+    private val live = LiveSession()
+    private var liveJob: Job? = null
+    private var liveUploadIntervalMs = LIVE_INTERVAL_MS
 
     private val listener = LocationListener { handleFix(it, force = false) }
 
@@ -177,7 +192,10 @@ class LocationService : LifecycleService() {
             // One streaming subscription, restarted whenever the pairing code changes.
             streamJob = lifecycleScope.launch {
                 repo.settings.map { it.pairingCode }.distinctUntilChanged().collectLatest {
-                    relay.streamDownlink { withContext(Dispatchers.Main) { publishNow(requestFriends = true, precise = true) } }
+                    relay.streamDownlink(
+                        onLocateRequest = { withContext(Dispatchers.Main) { publishNow(requestFriends = true, precise = true) } },
+                        onLive = { active -> withContext(Dispatchers.Main) { onLiveSignal(active) } },
+                    )
                 }
             }
             heartbeatJob = lifecycleScope.launch { heartbeatLoop() }
@@ -206,6 +224,8 @@ class LocationService : LifecycleService() {
         streamJob?.cancel()
         heartbeatJob?.cancel()
         modeJob?.cancel()
+        liveJob?.cancel()
+        live.reset()
         removeLocationRequests()
         cancelQuietAlert()
         repo.setLocationMode("Off")
@@ -226,6 +246,7 @@ class LocationService : LifecycleService() {
     }
 
     private fun desiredMode(): Mode = when {
+        live.active -> Mode.Live
         repo.uiVisible.value -> Mode.Boost
         stationary -> Mode.Stationary
         else -> Mode.Moving
@@ -267,6 +288,15 @@ class LocationService : LifecycleService() {
         val cadence = repo.settings.value.cadence
         runCatching {
             when (target) {
+                Mode.Live -> {
+                    val provider = activeProvider() ?: return
+                    locationManager.requestLocationUpdates(provider,
+                        LocationRequest.Builder(LIVE_INTERVAL_MS)
+                            .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+                            .build(),
+                        mainExecutor, listener)
+                    repo.setLocationMode("Live • precise")
+                }
                 Mode.Boost -> {
                     val provider = activeProvider() ?: return
                     locationManager.requestLocationUpdates(provider,
@@ -327,6 +357,40 @@ class LocationService : LifecycleService() {
         }
     }
 
+    // ---- Live sessions -------------------------------------------------------------------------
+
+    /** The relay iPhone's `live` message: someone started viewing (or still is), or stopped. */
+    private fun onLiveSignal(active: Boolean) {
+        if (!running || !repo.settings.value.sharingEnabled) return
+        when (live.onSignal(active, System.currentTimeMillis())) {
+            LiveSession.Change.Started -> {
+                val publicRelay = repo.settings.value.pairing?.usesPublicRelay == true
+                liveUploadIntervalMs = if (publicRelay) LIVE_PUBLIC_RELAY_INTERVAL_MS else LIVE_INTERVAL_MS
+                repo.log("Someone is viewing your location: sharing live")
+                applyMode()
+                publishNow(requestFriends = false, precise = true)
+                liveJob?.cancel()
+                liveJob = lifecycleScope.launch {
+                    while (live.active) {
+                        delay(5_000L)
+                        if (live.check(System.currentTimeMillis()) == LiveSession.Change.Ended) {
+                            liveEnded("Live sharing ended (no word from the relay iPhone, or 30 minutes passed)")
+                        }
+                    }
+                }
+            }
+            LiveSession.Change.Ended -> liveEnded("Live sharing ended")
+            LiveSession.Change.None -> Unit
+        }
+    }
+
+    private fun liveEnded(message: String) {
+        liveJob?.cancel()
+        liveJob = null
+        repo.log(message)
+        applyMode()
+    }
+
     // ---- Heartbeat and uploads -----------------------------------------------------------------
 
     /** Re-sends the location while stationary so the iPhone's copy doesn't expire. */
@@ -349,6 +413,7 @@ class LocationService : LifecycleService() {
     /**
      * Uploads a recent fix now if there is one (e.g. a passive fix another app paid for),
      * otherwise takes one fresh fix: precise for explicit requests, balanced power for heartbeats.
+     * Precise requests only reuse a fix from the last [PRECISE_REUSE_MAX_AGE_MS].
      */
     @Suppress("MissingPermission")
     private fun publishNow(requestFriends: Boolean, precise: Boolean) {
@@ -357,7 +422,8 @@ class LocationService : LifecycleService() {
             .mapNotNull { runCatching { locationManager.getLastKnownLocation(it) }.getOrNull() }
             .filter { LocationValidator.isValid(it) }
             .minByOrNull { it.accuracy }
-        if (recent != null && (!precise || recent.accuracy <= 50f)) {
+        val recentAgeMs = recent?.let { (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1_000_000L }
+        if (recent != null && (!precise || (recent.accuracy <= 50f && recentAgeMs!! <= PRECISE_REUSE_MAX_AGE_MS))) {
             handleFix(recent, force = true)
             return
         }
@@ -391,8 +457,10 @@ class LocationService : LifecycleService() {
         val elapsed = now - lastUploadMs
         // Start, "sync now" and the first heartbeat can all fire together; one upload is enough.
         if (force && elapsed < DEDUPE_WINDOW_MS) return
-        val shouldUpload = force || lastUploaded == null ||
-            (location.distanceTo(lastUploaded!!) >= settings.cadence.distanceM && elapsed >= MIN_UPLOAD_INTERVAL_MS) ||
+        val moved = lastUploaded?.let { location.distanceTo(it) } ?: Float.MAX_VALUE
+        val shouldUpload = force ||
+            (live.active && moved >= LIVE_DISTANCE_M && elapsed >= liveUploadIntervalMs) ||
+            (moved >= settings.cadence.distanceM && elapsed >= MIN_UPLOAD_INTERVAL_MS) ||
             elapsed >= settings.cadence.heartbeatMs
         if (!shouldUpload) return
 

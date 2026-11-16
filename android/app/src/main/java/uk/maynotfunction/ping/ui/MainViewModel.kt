@@ -127,7 +127,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 foregroundPoll?.cancel()
                 foregroundPoll = viewModelScope.launch {
                     relay.sendRefreshRequest()
-                    relay.streamDownlink { } // until onPaused() cancels it
+                    relay.streamDownlink(onLocateRequest = {}, onLive = {}) // until onPaused() cancels it
                 }
             }
         }
@@ -203,7 +203,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     suspend fun runSetupCheck(listenMs: Long = 15_000): SetupCheck = coroutineScope {
         val before = repo.status.value.lastDownlinkMs
-        val listener = launch { relay.streamDownlink { } }
+        val listener = launch { relay.streamDownlink(onLocateRequest = {}, onLive = {}) }
         try {
             val connection = relay.checkConnection()
             val answered = connection.lan == RelayClient.CheckResult.Ok ||

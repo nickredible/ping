@@ -46,6 +46,11 @@ class PairingCodeTest {
         assertTrue(Vectors.config.relayEnabled)
     }
 
+    @Test fun recognisesThePublicRelay() {
+        assertTrue(PairingCode.parse(PairingCode.generate("https://ntfy.sh/", null, null))!!.usesPublicRelay)
+        assertFalse(Vectors.config.usesPublicRelay)
+    }
+
     @Test fun buildRoundTrips() {
         val code = PairingCode.build("https://ntfy.example.com", channel, Vectors.json.getString("keyBase64"),
             "192.168.1.13:8765", "tk_abc")

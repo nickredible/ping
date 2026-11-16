@@ -191,9 +191,10 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
 
     /**
      * Subscribes to the downlink topic until cancelled, reconnecting with exponential backoff
-     * (or the relay's Retry-After). [onLocateRequest] runs when the iPhone asks for a fresh fix.
+     * (or the relay's Retry-After). [onLocateRequest] runs when the iPhone asks for a fresh fix,
+     * [onLive] when it says someone started viewing (true, repeated as a keep-alive) or stopped.
      */
-    suspend fun streamDownlink(onLocateRequest: suspend () -> Unit) {
+    suspend fun streamDownlink(onLocateRequest: suspend () -> Unit, onLive: suspend (Boolean) -> Unit) {
         var backoff = MIN_BACKOFF_MS
         var lastError: String? = null
         while (currentCoroutineContext().isActive) {
@@ -202,7 +203,7 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
                 delay(10_000)
                 continue
             }
-            val end = if (cfg.relayEnabled) streamOnce(cfg, onLocateRequest) else streamLanOnce(cfg, onLocateRequest)
+            val end = if (cfg.relayEnabled) streamOnce(cfg, onLocateRequest, onLive) else streamLanOnce(cfg, onLocateRequest, onLive)
             if (end.connected) {
                 backoff = MIN_BACKOFF_MS
                 lastError = null
@@ -217,7 +218,11 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
 
     private class StreamEnd(val connected: Boolean, val retryAfterMs: Long?, val error: String?)
 
-    private suspend fun streamOnce(cfg: PairingConfig, onLocateRequest: suspend () -> Unit): StreamEnd = coroutineScope {
+    private suspend fun streamOnce(
+        cfg: PairingConfig,
+        onLocateRequest: suspend () -> Unit,
+        onLive: suspend (Boolean) -> Unit,
+    ): StreamEnd = coroutineScope {
         val since = if (lastDownlinkTimeSec > 0) lastDownlinkTimeSec.toString() else "60s"
         val conn = (URL("${cfg.relayUrl}/fmb-${cfg.channelId}-down/json?since=$since")
             .openConnection() as HttpURLConnection).apply {
@@ -238,7 +243,7 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
                 conn.inputStream.bufferedReader().use { reader ->
                     while (true) {
                         val line = reader.readLine() ?: break
-                        handleDownlinkLine(line, cfg, onLocateRequest)
+                        handleDownlinkLine(line, cfg, onLocateRequest, onLive)
                     }
                 }
                 StreamEnd(true, null, null)
@@ -256,7 +261,11 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
      * `subscribe` message, which proves the key; the reply is one encrypted envelope per line
      * (starting with the current friends) plus `{"event":"keepalive"}` lines every ~45 s.
      */
-    private suspend fun streamLanOnce(cfg: PairingConfig, onLocateRequest: suspend () -> Unit): StreamEnd = coroutineScope {
+    private suspend fun streamLanOnce(
+        cfg: PairingConfig,
+        onLocateRequest: suspend () -> Unit,
+        onLive: suspend (Boolean) -> Unit,
+    ): StreamEnd = coroutineScope {
         val lan = cfg.lanEndpoint ?: return@coroutineScope StreamEnd(false, null, "No LAN/VPN address set")
         val conn = (URL("http://$lan/v1/stream").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -281,7 +290,7 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
                 conn.inputStream.bufferedReader().use { reader ->
                     while (true) {
                         val line = reader.readLine() ?: break
-                        handleDownlinkLine(line, cfg, onLocateRequest)
+                        handleDownlinkLine(line, cfg, onLocateRequest, onLive)
                     }
                 }
                 StreamEnd(true, null, null)
@@ -294,7 +303,12 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
         }
     }
 
-    private suspend fun handleDownlinkLine(line: String, cfg: PairingConfig, onLocateRequest: suspend () -> Unit) {
+    private suspend fun handleDownlinkLine(
+        line: String,
+        cfg: PairingConfig,
+        onLocateRequest: suspend () -> Unit,
+        onLive: suspend (Boolean) -> Unit,
+    ) {
         val outer = runCatching { JSONObject(line.trim()) }.getOrNull() ?: return
         if (outer.optString("event", "message") != "message") return // open / keepalive
         val t = outer.optLong("time")
@@ -306,9 +320,12 @@ class RelayClient(context: Context, private val repo: BridgeRepository) {
         } ?: return
         val payload = Envelope.decrypt(env, Envelope.DOWN, cfg) ?: return
         if (!downSeq.accept(payload)) return
-        if (payload.optString("type") == "locate_request") {
-            repo.log("Relay iPhone asked for a fresh fix")
-            onLocateRequest()
+        when (payload.optString("type")) {
+            "locate_request" -> {
+                repo.log("Relay iPhone asked for a fresh fix")
+                onLocateRequest()
+            }
+            "live" -> onLive(payload.optBoolean("active"))
         }
         repo.applyDownlink(payload)
     }

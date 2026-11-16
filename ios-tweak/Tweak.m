@@ -41,6 +41,10 @@ static const char *kNotifyFriendsUpdated        = "uk.maynotfunction.pingrelay.f
 static const char *kNotifyLocateNeeded          = "uk.maynotfunction.pingrelay.locate_needed";
 static const char *kNotifyRequestFriendsRefresh = "uk.maynotfunction.pingrelay.request_friends_refresh";
 static const char *kNotifyConfigChanged         = "uk.maynotfunction.pingrelay.config_changed";
+// Live sessions: each Find My process keeps the time it last saw one in the notify state of
+// "<prefix><process>" (0 = none) and posts kNotifyLiveChanged when it changes.
+static const char *kNotifyLiveChanged           = "uk.maynotfunction.pingrelay.live_changed";
+static NSString *const kNotifyLiveStatePrefix   = @"uk.maynotfunction.pingrelay.live.";
 
 static const uint16_t kDefaultHttpPort = 8765;
 
@@ -652,7 +656,10 @@ static void pushLiveLocationToActiveManagers(void) {
 
 static void (*orig_delegate_didUpdateLocations)(id, SEL, CLLocationManager *, NSArray<CLLocation *> *) = NULL;
 
+static void liveSessionHeartbeat(void);
+
 static void hooked_delegate_didUpdateLocations(id self, SEL _cmd, CLLocationManager *manager, NSArray<CLLocation *> *locations) {
+    liveSessionHeartbeat();
     NSDictionary *state = injectedLiveState();
     CLLocation *liveLoc = constructCLLocationFromState(state);
     NSArray<CLLocation *> *replacement = liveLoc ? @[liveLoc] : locations;
@@ -717,6 +724,99 @@ static void hooked_CLLocationManager_setDelegate(CLLocationManager *self, SEL _c
     }
 }
 
+#pragma mark Live sessions
+
+// While someone views this iPhone's location, Find My (findmydeviced on iOS 15) asks for
+// continuous, precise updates, and stops a few minutes after they leave. Background tracking
+// also calls startUpdatingLocation, but with a very coarse accuracy. Precise continuous updates
+// count as a live session until every such manager has stopped.
+//
+// The process refreshes its notify state every kLiveRefreshSec, so a process that dies mid-session
+// goes stale rather than stuck. Timers run late while the locked iPhone sleeps (gaps of 70-100 s
+// were seen), so the refresh is driven by the location updates the session delivers every few
+// seconds. The timer is only a fallback that notices managers freed without a stop.
+static const CLLocationAccuracy kLiveMaxAccuracyM = 100.0;
+static const int64_t kLiveRefreshSec = 30;
+static NSHashTable<CLLocationManager *> *gLiveManagers = nil;
+static dispatch_source_t gLiveRefreshTimer = nil;
+static int gLiveStateToken = -1;
+static volatile int64_t gLiveRefreshedMs = 0;
+
+static BOOL isLiveRequest(CLLocationManager *mgr) {
+    if (gIsDeviceDaemon && !gDeviceHookEnabled) return NO; // not injecting here, so nothing to stream
+    return mgr.desiredAccuracy <= kLiveMaxAccuracyM;
+}
+
+// Main queue only.
+static void publishLiveState(BOOL on) {
+    if (gLiveStateToken < 0) {
+        NSString *name = [kNotifyLiveStatePrefix stringByAppendingString:[NSString stringWithUTF8String:getprogname() ?: "?"]];
+        int token = -1;
+        if (notify_register_check(name.UTF8String, &token) != NOTIFY_STATUS_OK) return;
+        gLiveStateToken = token;
+    }
+    gLiveRefreshedMs = on ? currentEpochMs() : 0;
+    notify_set_state(gLiveStateToken, on ? (uint64_t)(gLiveRefreshedMs / 1000) : 0);
+    notify_post(kNotifyLiveChanged);
+}
+
+// Main queue only.
+static void liveSessionEnded(void) {
+    if (gLiveRefreshTimer) {
+        dispatch_source_cancel(gLiveRefreshTimer);
+        gLiveRefreshTimer = nil;
+    }
+    publishLiveState(NO);
+}
+
+static NSUInteger liveManagerCount(void) {
+    @synchronized (gManagersLock) {
+        return gLiveManagers.allObjects.count; // allObjects skips managers that were freed
+    }
+}
+
+static void noteLiveStart(CLLocationManager *mgr) {
+    @synchronized (gManagersLock) {
+        BOOL first = gLiveManagers.allObjects.count == 0;
+        [gLiveManagers addObject:mgr];
+        if (!first) return;
+        // Dispatched under the lock so starts and stops reach the main queue in order.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            publishLiveState(YES);
+            if (gLiveRefreshTimer) return;
+            gLiveRefreshTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+            dispatch_source_set_timer(gLiveRefreshTimer,
+                                      dispatch_time(DISPATCH_TIME_NOW, kLiveRefreshSec * NSEC_PER_SEC),
+                                      kLiveRefreshSec * NSEC_PER_SEC, 2 * NSEC_PER_SEC);
+            dispatch_source_set_event_handler(gLiveRefreshTimer, ^{
+                if (liveManagerCount() > 0) publishLiveState(YES);
+                else liveSessionEnded();
+            });
+            dispatch_resume(gLiveRefreshTimer);
+        });
+    }
+}
+
+// Called for every location update a delegate receives.
+static void liveSessionHeartbeat(void) {
+    int64_t last = gLiveRefreshedMs;
+    if (last == 0 || currentEpochMs() - last < kLiveRefreshSec * 1000) return;
+    gLiveRefreshedMs = currentEpochMs(); // claims this refresh so other queues don't repeat it
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (liveManagerCount() > 0) publishLiveState(YES);
+    });
+}
+
+static void noteLiveStop(CLLocationManager *mgr) {
+    @synchronized (gManagersLock) {
+        if (![gLiveManagers containsObject:mgr]) return;
+        [gLiveManagers removeObject:mgr];
+        if (gLiveManagers.allObjects.count == 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{ liveSessionEnded(); });
+        }
+    }
+}
+
 static void (*orig_CLLocationManager_startUpdatingLocation)(id, SEL) = NULL;
 static void hooked_CLLocationManager_startUpdatingLocation(CLLocationManager *self, SEL _cmd) {
     @synchronized (gManagersLock) {
@@ -726,7 +826,17 @@ static void hooked_CLLocationManager_startUpdatingLocation(CLLocationManager *se
         orig_CLLocationManager_startUpdatingLocation(self, _cmd);
     }
     pushLiveLocationToActiveManagers();
-    notify_post(kNotifyLocateNeeded);
+    // Background tracking (coarse accuracy) doesn't need anything from Android: its heartbeats
+    // keep the held fix current.
+    if (isLiveRequest(self)) noteLiveStart(self);
+}
+
+static void (*orig_CLLocationManager_stopUpdatingLocation)(id, SEL) = NULL;
+static void hooked_CLLocationManager_stopUpdatingLocation(CLLocationManager *self, SEL _cmd) {
+    if (orig_CLLocationManager_stopUpdatingLocation) {
+        orig_CLLocationManager_stopUpdatingLocation(self, _cmd);
+    }
+    noteLiveStop(self);
 }
 
 static void (*orig_CLLocationManager_requestLocation)(id, SEL) = NULL;
@@ -1381,11 +1491,13 @@ static void initFindMyClientHooks(BOOL isFindMyApp, BOOL isDeviceDaemon) {
     gManagersLock = [[NSObject alloc] init];
     gActiveManagers = [NSHashTable weakObjectsHashTable];
     gSwizzledDelegateClasses = [NSMutableSet set];
+    gLiveManagers = [NSHashTable weakObjectsHashTable];
 
     Class clMgr = objc_getClass("CLLocationManager");
     installHook(clMgr, @selector(location), (IMP)hooked_CLLocationManager_location, (IMP *)&orig_CLLocationManager_location);
     installHook(clMgr, @selector(setDelegate:), (IMP)hooked_CLLocationManager_setDelegate, (IMP *)&orig_CLLocationManager_setDelegate);
     installHook(clMgr, @selector(startUpdatingLocation), (IMP)hooked_CLLocationManager_startUpdatingLocation, (IMP *)&orig_CLLocationManager_startUpdatingLocation);
+    installHook(clMgr, @selector(stopUpdatingLocation), (IMP)hooked_CLLocationManager_stopUpdatingLocation, (IMP *)&orig_CLLocationManager_stopUpdatingLocation);
     installHook(clMgr, @selector(requestLocation), (IMP)hooked_CLLocationManager_requestLocation, (IMP *)&orig_CLLocationManager_requestLocation);
 
     Class clSrcInfo = objc_getClass("CLLocationSourceInformation");
@@ -1494,7 +1606,8 @@ static void startLanStreamHub(void) {
     dispatch_resume(gLanKeepaliveTimer);
 }
 
-static NSDictionary *buildDownlinkPayload(NSString *msgType) {
+// `extra` adds message-specific fields (e.g. `active` on a `live` message).
+static NSDictionary *buildDownlinkPayload(NSString *msgType, NSDictionary *extra) {
     NSDictionary *liveState = loadLiveState();
     NSString *friendsPath = resolvePath(kFriendsPathRootless, kFriendsPathFallback);
     NSData *friendsData = [NSData dataWithContentsOfFile:friendsPath];
@@ -1512,7 +1625,7 @@ static NSDictionary *buildDownlinkPayload(NSString *msgType) {
         seq = fmbNextSeq(&gLastSentDownSeq);
     }
 
-    return @{
+    NSMutableDictionary *payload = [@{
         @"type": msgType ?: @"friends_state",
         @"seq": @(seq),
         @"relayTimeMs": @(currentEpochMs()),
@@ -1522,7 +1635,9 @@ static NSDictionary *buildDownlinkPayload(NSString *msgType) {
         @"lastInjectedFixTimeMs": liveState[@"fixTimeMs"] ?: @0,
         @"liveFixActive": @(liveState != nil),
         @"friends": friendsList
-    };
+    } mutableCopy];
+    if (extra) [payload addEntriesFromDictionary:extra];
+    return payload;
 }
 
 // ntfy.sh limits anonymous clients (~1 request / 5 s refill, 250 messages / day per IP), so
@@ -1540,7 +1655,7 @@ static int64_t retryAfterMs(NSHTTPURLResponse *http) {
 
 // Sends a downlink message to any LAN/VPN stream subscribers and, unless the pairing is
 // LAN/VPN only, publishes it to the relay's downlink topic.
-static void publishDownlink(NSString *msgType, BOOL force) {
+static void publishDownlinkWith(NSString *msgType, BOOL force, NSDictionary *extra) {
     NSDictionary *cfg = loadOrCreateBridgeConfig();
     if (!cfg) return;
     NSString *relayUrl  = cfg[@"relayUrl"];
@@ -1548,7 +1663,7 @@ static void publishDownlink(NSString *msgType, BOOL force) {
     NSData *keyData     = [[NSData alloc] initWithBase64EncodedString:cfg[@"keyBase64"] options:0];
     if (!channelId || keyData.length != 32) return;
 
-    NSDictionary *downPayload = buildDownlinkPayload(msgType);
+    NSDictionary *downPayload = buildDownlinkPayload(msgType, extra);
     NSString *envJson = encryptEnvelopeJson(downPayload, @"down", channelId, keyData);
     if (!envJson) return;
     lanBroadcastLine(envJson);
@@ -1592,6 +1707,10 @@ static void publishDownlink(NSString *msgType, BOOL force) {
         }
     }];
     [task resume];
+}
+
+static void publishDownlink(NSString *msgType, BOOL force) {
+    publishDownlinkWith(msgType, force, nil);
 }
 
 // Decrypts an uplink envelope (bare, or wrapped in an ntfy event). Returns the payload, or nil if
@@ -1648,7 +1767,7 @@ static NSString *currentFriendsStateEnvelope(void) {
     NSDictionary *cfg = loadOrCreateBridgeConfig();
     NSData *keyData = [[NSData alloc] initWithBase64EncodedString:cfg[@"keyBase64"] options:0];
     if (!cfg[@"channelId"] || keyData.length != 32) return nil;
-    return encryptEnvelopeJson(buildDownlinkPayload(@"friends_state"), @"down", cfg[@"channelId"], keyData);
+    return encryptEnvelopeJson(buildDownlinkPayload(@"friends_state", nil), @"down", cfg[@"channelId"], keyData);
 }
 
 static void handleIncomingEncryptedEnvelopeString(NSString *rawString, NSString **responseEnvelopeOut) {
@@ -1863,7 +1982,7 @@ static void startLocalHttpServer(void) {
                     NSString *headers = nil;
                     NSData *bodyData = readHttpRequest(clientFd, &headers);
 
-                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"1.5.1\"}";
+                    NSString *respBody = @"{\"ok\":true,\"service\":\"PingRelay\",\"version\":\"1.6.0\"}";
                     NSString *contentType = @"application/json";
                     int statusCode = 200;
                     NSString *body = bodyData ? [[NSString alloc] initWithData:bodyData encoding:NSUTF8StringEncoding] : nil;
@@ -1919,6 +2038,74 @@ static void startLocalHttpServer(void) {
     });
 }
 
+// Turns the Find My processes' live-session states into `live` downlinks: `active: true` when a
+// session starts and every kLiveKeepaliveMs while it lasts, `active: false` when it ends. Android
+// streams precise fixes in between, and gives up by itself if the keep-alives stop.
+static const char *kLiveProcesses[] = {"FindMy", "fmfd", "findmydeviced", "searchpartyd"};
+#define kLiveProcessCount (sizeof(kLiveProcesses) / sizeof(kLiveProcesses[0]))
+static const int64_t kLiveStaleSec = 120; // processes refresh every kLiveRefreshSec, sometimes late
+// Below kLiveRefreshSec, so each refresh a process posts goes out as a keep-alive.
+static const int64_t kLiveKeepaliveMs = 25 * 1000;
+static int gLiveProcessTokens[kLiveProcessCount];
+static dispatch_queue_t gLiveQueue = nil;
+static dispatch_source_t gLiveHubTimer = nil;
+static BOOL gHubLive = NO;
+static BOOL gHubLiveEndPending = NO;
+static int64_t gHubLiveSentMs = 0;
+// Find My sometimes swaps one manager for another mid-session (stop, then start a moment later),
+// so an end only goes out if nothing has restarted within this long.
+static const int64_t kLiveEndGraceSec = 5;
+
+static BOOL anyProcessLive(void) {
+    int64_t nowSec = currentEpochMs() / 1000;
+    for (size_t i = 0; i < kLiveProcessCount; i++) {
+        uint64_t since = 0;
+        if (gLiveProcessTokens[i] >= 0 && notify_get_state(gLiveProcessTokens[i], &since) == NOTIFY_STATUS_OK &&
+            since > 0 && nowSec - (int64_t)since <= kLiveStaleSec) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+// gLiveQueue only.
+static void evaluateLiveSession(void) {
+    BOOL live = anyProcessLive();
+    int64_t now = currentEpochMs();
+    if (live && (!gHubLive || now - gHubLiveSentMs >= kLiveKeepaliveMs)) {
+        gHubLive = YES;
+        gHubLiveSentMs = now;
+        publishDownlinkWith(@"live", YES, @{@"active": @YES});
+    } else if (!live && gHubLive && !gHubLiveEndPending) {
+        gHubLiveEndPending = YES;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kLiveEndGraceSec * NSEC_PER_SEC), gLiveQueue, ^{
+            gHubLiveEndPending = NO;
+            if (gHubLive && !anyProcessLive()) {
+                gHubLive = NO;
+                publishDownlinkWith(@"live", YES, @{@"active": @NO});
+            }
+        });
+    }
+}
+
+static void startLiveSessionHub(void) {
+    gLiveQueue = dispatch_queue_create("uk.maynotfunction.pingrelay.live", DISPATCH_QUEUE_SERIAL);
+    for (size_t i = 0; i < kLiveProcessCount; i++) {
+        NSString *name = [kNotifyLiveStatePrefix stringByAppendingString:[NSString stringWithUTF8String:kLiveProcesses[i]]];
+        if (notify_register_check(name.UTF8String, &gLiveProcessTokens[i]) != NOTIFY_STATUS_OK) gLiveProcessTokens[i] = -1;
+    }
+    int liveToken = 0;
+    notify_register_dispatch(kNotifyLiveChanged, &liveToken, gLiveQueue, ^(int token) {
+        evaluateLiveSession();
+    });
+    // Sends keep-alives, and notices a process whose state went stale.
+    gLiveHubTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gLiveQueue);
+    dispatch_source_set_timer(gLiveHubTimer, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC),
+                              10 * NSEC_PER_SEC, 2 * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(gLiveHubTimer, ^{ evaluateLiveSession(); });
+    dispatch_resume(gLiveHubTimer);
+}
+
 static void initSpringBoardHub(void) {
     gSeqLock = [[NSObject alloc] init];
     loadOrCreateBridgeConfig();
@@ -1935,6 +2122,8 @@ static void initSpringBoardHub(void) {
     notify_register_dispatch(kNotifyLocateNeeded, &locateToken, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(int token) {
         publishDownlink(@"locate_request", YES);
     });
+
+    startLiveSessionHub();
 }
 
 #pragma mark - Tweak Constructor (%ctor)

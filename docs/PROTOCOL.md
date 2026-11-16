@@ -115,11 +115,12 @@ count towards replay protection, so it can't race the uplinks sent at the same t
 
 ### Downlink (iPhone → Android), topic `fmb-<channel>-down`
 
-Both downlink types share one shape:
+All downlink types share one shape:
 
 | Field | Type | Notes |
 |---|---|---|
-| `type` | `"friends_state"` or `"locate_request"` | |
+| `type` | `"friends_state"`, `"locate_request"` or `"live"` | |
+| `active` | bool | `live` only: see below |
 | `seq` | int (ms) | |
 | `friends` | array | See below |
 | `relayActive` | bool | The bridge's **Enable** switch |
@@ -130,7 +131,12 @@ Both downlink types share one shape:
 | `fmfdHooked` | bool | Always `true`; informational |
 
 A `locate_request` asks Android to upload a fresh, precise fix now. The iPhone sends one whenever
-Find My starts or requests a location update. Android also applies its `friends` list.
+Find My requests a one-off location. Android also applies its `friends` list.
+
+A `live` message means someone is viewing this location in Find My (`active: true`, repeated every
+30 s as a keep-alive) or has stopped (`active: false`). While it's active, Android streams precise
+fixes. It ends the session by itself if no keep-alive arrives for 150 s, and after 30 minutes at most.
+See [`ARCHITECTURE.md`](ARCHITECTURE.md#live-sessions).
 
 Each entry in `friends`:
 
